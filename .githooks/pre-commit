@@ -1,0 +1,3 @@
+#!/bin/sh
+# 활성화: git config core.hooksPath .githooks
+exec python3 method/recipes/check_integrity.py

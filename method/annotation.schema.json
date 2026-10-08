@@ -1,0 +1,588 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "GENERATED from codebook.yaml version 0 by method/recipes/gen_annotation_schema.py — 손으로 고치지 않는다. 코드북을 고치고 다시 생성한다.",
+  "title": "WorkUnitAnnotation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "wu_id",
+    "codebook_version",
+    "title",
+    "summary",
+    "facets",
+    "archetype",
+    "hidden_subtasks",
+    "pitfalls",
+    "open_questions"
+  ],
+  "properties": {
+    "wu_id": {
+      "type": "string"
+    },
+    "codebook_version": {
+      "const": 0
+    },
+    "title": {
+      "$ref": "#/$defs/text_claim"
+    },
+    "summary": {
+      "$ref": "#/$defs/text_claim"
+    },
+    "facets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "nature",
+        "domain",
+        "response_mode",
+        "time_pattern",
+        "risk",
+        "failure_class",
+        "scale",
+        "outcome",
+        "roles",
+        "toil"
+      ],
+      "properties": {
+        "origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "planned_request",
+                "defect_report",
+                "live_anomaly",
+                "ops_request",
+                "external_change",
+                "self_initiated",
+                "inquiry",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "이 일은 무엇을 계기로 시작됐나"
+        },
+        "nature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "build_new",
+                "extend_change",
+                "fix",
+                "ops_execution",
+                "investigate",
+                "coordinate",
+                "document",
+                "org_activity",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "이 일의 주된 산출물은 무엇인가"
+        },
+        "domain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "이 일이 닿는 시스템 영역은 어디인가"
+        },
+        "response_mode": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "clear",
+                "complicated",
+                "complex",
+                "chaotic",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "원인과 해법의 관계가 얼마나 보이는가 (Cynefin)"
+        },
+        "time_pattern": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "unplanned",
+                "planned",
+                "periodic",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "언제 생기는 일인가"
+        },
+        "risk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "money",
+                  "persistent_data",
+                  "availability",
+                  "security_fairness",
+                  "external_commitment",
+                  "none",
+                  "unknown",
+                  "residual"
+                ]
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "잘못되면 무엇이 손상되나"
+        },
+        "failure_class": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "not_applicable",
+                "function",
+                "interface",
+                "checking",
+                "assignment",
+                "algorithm",
+                "timing",
+                "build_merge",
+                "config_data",
+                "capacity",
+                "external",
+                "spec",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "결함·장애라면 무엇이 잘못됐나 (ODC 결함 유형을 운영 현실에 맞게 줄이고 넓힘)"
+        },
+        "scale": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "single",
+                "small",
+                "medium",
+                "large",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "얼마나 큰 일이었나 (실측 우선, 추정이면 confidence 를 낮춘다)"
+        },
+        "outcome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "clean",
+                "reopened",
+                "followup_fix",
+                "rolled_back",
+                "abandoned",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "어떻게 끝났고, 끝난 뒤 무슨 일이 있었나 (열린 창 동안 갱신)"
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "planner",
+                  "client_dev",
+                  "qa",
+                  "ops_cs",
+                  "pm_biz",
+                  "infra_dba",
+                  "security",
+                  "external",
+                  "unknown",
+                  "residual"
+                ]
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "누가 얽혔나 (역할만. 개인을 기록하지 않는다)"
+        },
+        "toil": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "confidence",
+            "evidence",
+            "candidate_note"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "toil",
+                "not_toil",
+                "unknown",
+                "residual"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidence"
+            },
+            "candidate_note": {
+              "type": "string",
+              "description": "residual 이면 가장 가까운 값과 이유. 아니면 빈 문자열"
+            }
+          },
+          "description": "SRE 기준의 토일인가 — 수작업·반복·자동화 가능·전술적·지속 가치 없음·규모 비례"
+        }
+      }
+    },
+    "archetype": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "fit",
+        "evidence",
+        "candidate_note"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "residual"
+          ]
+        },
+        "fit": {
+          "type": "string",
+          "enum": [
+            "strong",
+            "partial",
+            "weak"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "candidate_note": {
+          "type": "string",
+          "description": "residual 이면 새 원형 후보 한 줄. 아니면 빈 문자열"
+        }
+      }
+    },
+    "hidden_subtasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "note",
+          "confidence",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "residual"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "residual 이면 새 하위작업 후보를 한 줄로. 아니면 이 WU 에서의 구체 내용"
+          },
+          "confidence": {
+            "$ref": "#/$defs/confidence"
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "pitfalls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "note",
+          "confidence",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "residual"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "residual 이면 새 함정 후보를 한 줄로. 아니면 이 WU 에서의 구체 내용"
+          },
+          "confidence": {
+            "$ref": "#/$defs/confidence"
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "관측만으로 판단하지 못한 것. 사람 확인 후보가 된다"
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "근거 서열. 정의는 codebook.yaml confidence_scale"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "근거 관측 obs_id 목록. 근거가 없으면 값은 unknown 이어야 한다"
+    },
+    "text_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "confidence",
+        "evidence"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      }
+    }
+  }
+}

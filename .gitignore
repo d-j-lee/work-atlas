@@ -1,0 +1,10 @@
+# 관측·작업단위·주석 캐시는 git 밖(사내 저장 경로)에 둔다 — 보존 기한 집행과 자기 감시 위험 때문.
+# METHODOLOGY.md §11
+data/
+
+# 로컬 실행 흔적
+__pycache__/
+*.pyc
+.env
+*.local.*
+.claude/settings.local.json

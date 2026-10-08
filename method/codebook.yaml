@@ -1,0 +1,400 @@
+# 코드북 — 패싯 값과 원형 정의의 정본. 사람과 LLM이 같은 파일을 읽고 분류한다.
+# 형식: MacQueen et al. (1998) — label · short · use_when · not_when · examples · boundary
+#   full(전체 정의)은 3단계 도출 뒤 채운다. 시드에는 판별에 필요한 최소만 둔다.
+# 규칙
+#   - examples 에는 근거 WU의 앵커 객체 참조(예: "issue:ABC-123")만 넣는다. 지어낸 예시를 넣지 않는다.
+#   - 값 추가·삭제·개명은 policy.md 의 변경 절차(골든셋 평가 + DECISIONS.md 한 줄)로만 한다.
+#   - id 는 공개 API다(오버레이·카드·스키마가 참조). 개명 대신 deprecated 표시 후 신규 id.
+#   - 이 파일을 바꾸면 recipes/gen_annotation_schema.py 로 annotation.schema.json 을 다시 만든다.
+
+version: 0
+status: seed            # seed → v1(3단계 도출 후) → ...
+
+reserved_values:        # 모든 패싯에 자동으로 붙는다
+  - id: unknown
+    short: 근거가 없어 판단할 수 없다
+    use_when: 관측에 이 패싯을 판단할 단서가 없다
+  - id: residual
+    short: 단서는 있으나 어느 값에도 잘 맞지 않는다
+    use_when: 억지로 고르면 정의를 어기게 된다. 가장 가까운 값을 candidate_note 에 적는다
+
+confidence_scale:       # LLM 숫자 대신 근거로 정의된 서열 (METHODOLOGY.md §5.5)
+  - id: high
+    short: 직접 근거 관측 2개 이상, 또는 결정론 신호(상태·링크·수치)로 확인됨
+  - id: medium
+    short: 직접 근거 관측 1개
+  - id: low
+    short: 간접 근거로 추론
+
+fit_scale:              # 원형·어휘 적합도
+  - id: strong
+    short: 판별 신호 대부분이 맞고 배제 조건에 해당하지 않는다
+  - id: partial
+    short: 일부 신호만 맞는다
+  - id: weak
+    short: 거의 맞지 않는다 — 잔차 후보
+
+facets:
+
+  - id: origin
+    label: 기원
+    question: 이 일은 무엇을 계기로 시작됐나
+    multi: false
+    values:
+      - id: planned_request
+        label: 계획 요청
+        short: 기획·사업·리드가 일정 안에서 범위를 갖고 요청한 일
+        use_when: 요청 시점에 기대 산출물과 일정이 대략 정해져 있다
+        not_when: 결함·장애가 계기다 → defect_report / live_anomaly
+        examples: []
+        boundary: []
+      - id: defect_report
+        label: 결함 보고
+        short: QA·사용자·CS가 잘못된 동작을 보고해서 시작된 일
+        use_when: 재현 가능한 오동작 보고가 출발점이다
+        not_when: 모니터링 알림이나 지표 이상이 먼저였다 → live_anomaly
+        examples: []
+        boundary: []
+      - id: live_anomaly
+        label: 라이브 이상
+        short: 운영 중 지표·알림·장애로 시작된 일
+        use_when: 사람의 보고보다 시스템 신호가 먼저였거나, 서비스 영향이 진행 중이다
+        not_when: 영향 없는 개발·테스트 환경 이슈다 → defect_report
+        examples: []
+        boundary: []
+      - id: ops_request
+        label: 운영 요청
+        short: 운영·CS·GM이 데이터 조회·정정·설정 변경 등을 요청한 일
+        use_when: 코드 변경 없이 운영 데이터나 설정을 다루는 요청이다
+        not_when: 요청이 코드 변경을 요구한다 → planned_request 또는 defect_report
+        examples: []
+        boundary: []
+      - id: external_change
+        label: 외부 변경
+        short: 플랫폼·SDK·인프라·보안 정책·법규 등 바깥의 변화에 대응하는 일
+        use_when: 계기가 우리 팀 밖의 일정이나 변경 공지다
+        not_when: 내부 리드가 정한 기술 부채 정리다 → self_initiated
+        examples: []
+        boundary: []
+      - id: self_initiated
+        label: 자발
+        short: 부채 정리·성능 개선·도구화 등 스스로 시작한 일
+        use_when: 외부 요청 없이 본인 판단으로 착수했다
+        not_when: 장애 재발 방지 조치다 → 원래 장애 WU의 후속으로 연결하고 기원은 live_anomaly
+        examples: []
+        boundary: []
+      - id: inquiry
+        label: 문의
+        short: 동작·데이터·일정·설계에 대한 질문에 답하는 일
+        use_when: 산출물이 답변·설명·판단이다
+        not_when: 답하는 과정에서 결함이 확인돼 수정까지 갔다 → 수정은 별도 WU
+        examples: []
+        boundary: []
+
+  - id: nature
+    label: 성격
+    question: 이 일의 주된 산출물은 무엇인가
+    multi: false
+    values:
+      - id: build_new
+        label: 신규 구축
+        short: 없던 기능·시스템·도구를 만든다
+        use_when: 새 모듈·API·테이블·서비스가 생긴다
+        not_when: 기존 기능의 규칙·범위를 바꾼다 → extend_change
+        examples: []
+        boundary: []
+      - id: extend_change
+        label: 확장·변경
+        short: 기존 기능의 규칙·범위·성능을 바꾼다
+        use_when: 기존 코드 경로를 수정하고 동작이 의도적으로 달라진다
+        not_when: 의도와 다른 동작을 바로잡는다 → fix
+        examples: []
+        boundary: []
+      - id: fix
+        label: 결함 수정
+        short: 의도와 다른 동작을 바로잡는다
+        use_when: 기대 동작이 이미 정의돼 있고 거기서 벗어난 것을 고친다
+        not_when: 기대 동작 자체를 바꾼다 → extend_change
+        examples: []
+        boundary: []
+      - id: ops_execution
+        label: 운영 실행
+        short: 데이터 정정·설정 변경·점검·배포 운영을 수행한다
+        use_when: 산출물이 코드가 아니라 운영 상태의 변화다
+        not_when: 실행을 위한 도구를 새로 만든다 → build_new
+        examples: []
+        boundary: []
+      - id: investigate
+        label: 조사·분석
+        short: 원인·현황·영향을 파악한다
+        use_when: 산출물이 결론·보고·가설이다
+        not_when: 조사 끝에 수정까지 했다 → 주 산출물 기준으로 fix 등 (조사는 하위작업)
+        examples: []
+        boundary: []
+      - id: coordinate
+        label: 조율·커뮤니케이션
+        short: 회의·합의·리뷰 요청 응대·일정 조율
+        use_when: 산출물이 합의·결정·전달이다
+        not_when: 산출물이 원인·현황에 대한 결론이다 → investigate
+        examples: []
+        boundary: []
+      - id: document
+        label: 문서화
+        short: 설계·운영·인수인계 문서를 쓴다
+        use_when: 산출물이 문서 자체다
+        not_when: 문서가 다른 작업의 부산물이다 → 주 작업 기준
+        examples: []
+        boundary: []
+      - id: org_activity
+        label: 조직 활동
+        short: 면접·교육·평가·채용 등 조직 운영 활동
+        use_when: 제품·서비스가 아니라 조직이 산출물의 수혜자다
+        not_when: 팀 개발 프로세스 개선 도구 제작 → build_new
+        examples: []
+        boundary: []
+
+  - id: domain
+    label: 영역
+    question: 이 일이 닿는 시스템 영역은 어디인가
+    multi: true
+    derive_from: codebase   # 값은 1단계에서 저장소 구조·소유 경계·변경 빈도로 도출한다. 미리 정하지 않는다.
+    values: []
+
+  - id: response_mode
+    label: 대응 모드
+    question: 원인과 해법의 관계가 얼마나 보이는가 (Cynefin)
+    multi: false
+    values:
+      - id: clear
+        label: 명확
+        short: 해법이 알려져 있고 절차대로 하면 된다
+        use_when: 같은 원형의 과거 사례와 같은 절차로 끝났다
+        not_when: 절차는 있으나 상황 판단이 필요했다 → complicated
+        examples: []
+        boundary: []
+      - id: complicated
+        label: 난해
+        short: 분석하면 답이 나온다. 전문 판단이 필요하다
+        use_when: 원인·해법을 분석으로 특정했다
+        not_when: 시도해 보며 방향을 바꿨다 → complex
+        examples: []
+        boundary: []
+      - id: complex
+        label: 복잡
+        short: 해 보기 전에는 인과가 안 보인다. 탐색하며 파악한다
+        use_when: 가설을 여러 번 바꾸거나 실험·단계 출시로 알아냈다
+        not_when: 서비스 영향이 진행 중이라 안정화가 먼저였다 → chaotic
+        examples: []
+        boundary: []
+      - id: chaotic
+        label: 혼돈
+        short: 영향이 진행 중이라 일단 안정화하고 나서 이해한다
+        use_when: 원인 파악 전에 롤백·차단·우회 같은 즉시 조치를 했다
+        not_when: 긴급했지만 원인이 바로 보였다 → clear 또는 complicated
+        examples: []
+        boundary: []
+
+  - id: time_pattern
+    label: 시간 패턴
+    question: 언제 생기는 일인가
+    multi: false
+    values:
+      - id: unplanned
+        label: 돌발
+        short: 예고 없이 생겼다
+        use_when: 발생 시점을 미리 알 수 없었다
+        examples: []
+        boundary: []
+      - id: planned
+        label: 계획
+        short: 일정에 잡혀 있던 일이다
+        use_when: 착수 전에 일정에 있었다
+        not_when: 정해진 주기로 반복된다 → periodic
+        examples: []
+        boundary: []
+      - id: periodic
+        label: 주기
+        short: 패치·시즌·점검·월말 등 주기로 반복된다
+        use_when: 같은 원형이 주기적으로 나타난다
+        examples: []
+        boundary: []
+
+  - id: risk
+    label: 위험 축
+    question: 잘못되면 무엇이 손상되나
+    multi: true
+    values:
+      - id: money
+        label: 돈
+        short: 재화·결제·보상 지급
+        examples: []
+        boundary: []
+      - id: persistent_data
+        label: 영속 데이터
+        short: 스키마 변경·이관·대량 정정
+        examples: []
+        boundary: []
+      - id: availability
+        label: 가용성
+        short: 무중단·부하·장애 반경
+        examples: []
+        boundary: []
+      - id: security_fairness
+        label: 보안·공정성
+        short: 권한·개인정보·부정행위 방지
+        examples: []
+        boundary: []
+      - id: external_commitment
+        label: 대외 약속
+        short: 퍼블리셔·플랫폼 심사·법규·공지된 일정
+        examples: []
+        boundary: []
+      - id: none
+        label: 없음
+        short: 위 어느 것에도 해당하지 않는다
+        not_when: 하나라도 해당하면 none 을 쓰지 않는다
+        examples: []
+        boundary: []
+
+  - id: failure_class
+    label: 결함 유형
+    question: 결함·장애라면 무엇이 잘못됐나 (ODC 결함 유형을 운영 현실에 맞게 줄이고 넓힘)
+    multi: false
+    values:
+      - id: not_applicable
+        label: 해당 없음
+        short: 결함 수정·장애가 아닌 일
+        use_when: nature 가 fix 가 아니고 origin 이 defect_report·live_anomaly 도 아니다
+      - id: function
+        label: 기능·설계
+        short: 필요한 기능이 빠졌거나 설계가 잘못됐다 (ODC function)
+        not_when: 기획 명세를 다르게 해석했다 → spec
+      - id: interface
+        label: 인터페이스
+        short: API·프로토콜·모듈 간 계약이 어긋났다 (ODC interface)
+      - id: checking
+        label: 검증
+        short: 입력 검증·경계값·예외 처리가 빠지거나 틀렸다 (ODC checking)
+      - id: assignment
+        label: 대입·초기화
+        short: 값 대입·초기화가 틀렸다 (ODC assignment)
+      - id: algorithm
+        label: 로직
+        short: 계산·로직·알고리즘이 틀렸다 (ODC algorithm)
+      - id: timing
+        label: 타이밍·동시성
+        short: 순서·경합·락·재진입 문제 (ODC timing/serialization)
+      - id: build_merge
+        label: 빌드·머지·배포물
+        short: 빌드·패키지·머지·배포 산출물 문제 (ODC build/package/merge)
+      - id: config_data
+        label: 설정·운영 데이터
+        short: 설정값·운영 데이터·데이터 테이블이 틀렸다 (운영 확장)
+        not_when: 코드가 데이터를 잘못 읽었다 → checking 또는 algorithm
+      - id: capacity
+        label: 용량·자원
+        short: 부하·메모리·커넥션 등 자원 한계 (운영 확장)
+      - id: external
+        label: 외부 의존
+        short: 외부 플랫폼·SDK·인프라의 변화나 장애 (운영 확장)
+      - id: spec
+        label: 명세 해석
+        short: 기획·명세의 의도와 구현이 달랐다 (확장)
+
+  - id: scale
+    label: 규모
+    question: 얼마나 큰 일이었나 (실측 우선, 추정이면 confidence 를 낮춘다)
+    multi: false
+    values:
+      - id: single
+        label: 단발
+        short: 1일 미만
+      - id: small
+        label: 소
+        short: 1주 이내, 변경 단위 1~2개
+      - id: medium
+        label: 중
+        short: 여러 변경 단위(MR) 또는 여러 관계자
+      - id: large
+        label: 대
+        short: 수주 이상 또는 에픽 — 하위 원형으로 분해한다
+
+  - id: outcome
+    label: 결과·후속
+    question: 어떻게 끝났고, 끝난 뒤 무슨 일이 있었나 (열린 창 동안 갱신)
+    multi: false
+    values:
+      - id: clean
+        label: 깔끔 종료
+        short: 열린 창 동안 후속 사건이 없다
+      - id: reopened
+        label: 재오픈
+        short: 종료 후 다시 열렸다
+      - id: followup_fix
+        label: 후속 수정
+        short: 이 일이 유발한 결함을 별도 WU로 고쳤다
+      - id: rolled_back
+        label: 롤백
+        short: 배포·변경을 되돌렸다
+      - id: abandoned
+        label: 보류·취소
+        short: 끝내지 않고 멈췄다
+
+  - id: roles
+    label: 관계자 역할
+    question: 누가 얽혔나 (역할만. 개인을 기록하지 않는다)
+    multi: true
+    values:
+      - { id: planner,    label: 기획 }
+      - { id: client_dev, label: 클라이언트 }
+      - { id: qa,         label: QA }
+      - { id: ops_cs,     label: 운영·CS }
+      - { id: pm_biz,     label: PM·사업 }
+      - { id: infra_dba,  label: 인프라·DBA }
+      - { id: security,   label: 보안 }
+      - { id: external,   label: 외부 }
+
+  - id: toil
+    label: 토일
+    question: SRE 기준의 토일인가 — 수작업·반복·자동화 가능·전술적·지속 가치 없음·규모 비례
+    multi: false
+    values:
+      - id: toil
+        label: 해당
+        short: 위 기준을 대부분 충족한다
+        use_when: 같은 절차를 손으로 반복했고 남는 개선이 없다
+      - id: not_toil
+        label: 비해당
+        short: 판단이 필요하거나 지속 가치가 남는다
+
+# 원형은 도출(METHODOLOGY.md §6.1)로 채운다. 시드에서 미리 만들지 않는다.
+archetypes: []
+
+# 통제 어휘 — 함정과 숨은 하위작업 (METHODOLOGY.md §5.3). 시드는 비어 있다.
+# 주석자는 id 를 고르거나 residual + note 를 남긴다. 재도출이 residual note 를 묶어 id 를 만든다.
+# 카드에 실리는 함정은 결정론 신호(재오픈·롤백·후속 수정·유발 결함)가 있는 WU 또는 포스트모템에서 나온 것만.
+vocabularies:
+  pitfalls: []
+  subtasks: []
+
+vocab_template:
+  id: kebab-case-id
+  label: ""
+  short: ""
+  use_when: ""
+  not_when: ""
+  status: active            # active | dormant
+  evidence: []              # 근거 WU 앵커 참조
+
+archetype_template:
+  id: kebab-case-id
+  label: ""
+  short: ""                 # 한 문장
+  signals: []               # 판별 신호 — 이 원형을 알아보는 단서
+  facet_profile: {}         # 전형적 패싯 값 (예: {origin: ops_request, nature: ops_execution})
+  use_when: ""
+  not_when: ""
+  parent: null              # 상위 원형 id (계층은 2단계까지)
+  delegation: { level: D1, rationale: "" }   # D0~D3, policy.md §위임
+  status: active            # active | dormant
+  evidence: []              # 소속 WU 앵커 참조. 승격 기준은 policy.md

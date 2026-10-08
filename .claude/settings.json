@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/build/**)",
+      "Edit(/data/**)",
+      "Edit(/method/annotation.schema.json)"
+    ]
+  }
+}
