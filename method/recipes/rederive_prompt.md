@@ -14,7 +14,7 @@
 절차:
 1. 개방 코딩 — 파일마다 이 일이 무엇이었는지 짧은 자유 코드를 2~5개 붙인다. 근거가 된 관측 id를 같이 적는다.
 2. 축 코딩 — 코드를 비교하며 묶어 후보 범주를 만든다. 범주마다 정의, 판별 신호, 배제 조건, 소속 WU를 적는다.
-3. 같은 방식으로 **함정**(일을 어렵게 만들었거나 사후 문제를 낳은 것)과 **숨은 하위작업**(요청에는 없었지만 실제로 필요했던 일)의 후보를 만든다.
+3. 같은 방식으로 **함정**(일을 어렵게 만들었거나 사후 문제를 낳은 것), **숨은 하위작업**(요청에는 없었지만 실제로 필요했던 일), **처리 수**(진행·해결에서 실제로 취한 결정적 행동 — 진단 단계, 해결 전략, 검증·출시 방식, 조율 방식)의 후보를 만든다. 처리 수는 관측에 남은 행동만 쓴다.
 4. 어느 범주에도 잘 안 맞는 WU는 억지로 넣지 말고 잔차로 남긴다. 이유를 한 줄 적는다.
 5. 장애·롤백·후속 수정·재화 사고의 흔적이 있는 WU는 한 건뿐이어도 별도 범주 후보로 남겨도 된다. 그 경우 `rare_high_risk: true`.
 
@@ -29,5 +29,6 @@
 - `categories`: [{ `id`, `label`, `definition`, `signals`[], `not_when`, `members`[wu_id], `rare_high_risk`(bool), `evidence`[obs_id] }]
 - `pitfall_candidates`: [{ `id`, `label`, `definition`, `members`[wu_id], `evidence`[obs_id] }]
 - `subtask_candidates`: [{ `id`, `label`, `definition`, `members`[wu_id], `evidence`[obs_id] }]
+- `move_candidates`: [{ `id`, `label`, `definition`, `members`[wu_id], `evidence`[obs_id] }]
 - `residual`: [{ `wu_id`, `reason` }]
 - `notes`: 이번 표본에서 확신하지 못한 점

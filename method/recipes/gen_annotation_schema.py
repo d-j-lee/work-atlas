@@ -82,7 +82,7 @@ def build(cb: dict) -> dict:
         "additionalProperties": False,
         "required": [
             "wu_id", "codebook_version", "title", "summary", "facets",
-            "archetype", "hidden_subtasks", "pitfalls", "open_questions",
+            "archetype", "hidden_subtasks", "pitfalls", "moves", "open_questions",
         ],
         "properties": {
             "wu_id": {"type": "string"},
@@ -108,6 +108,11 @@ def build(cb: dict) -> dict:
             },
             "hidden_subtasks": {"type": "array", "items": vocab_claim(ids(vocab.get("subtasks")), reserved, "하위작업")},
             "pitfalls": {"type": "array", "items": vocab_claim(ids(vocab.get("pitfalls")), reserved, "함정")},
+            "moves": {
+                "type": "array",
+                "items": vocab_claim(ids(vocab.get("moves")), reserved, "처리 수"),
+                "description": "진행·해결에서 실제로 취한 결정적 행동. 관측된 행동만 — 의도·바람직한 절차를 추정하지 않는다",
+            },
             "open_questions": {
                 "type": "array",
                 "items": {"type": "string"},
