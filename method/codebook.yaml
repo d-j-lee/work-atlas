@@ -9,6 +9,7 @@
 
 version: 0
 status: seed            # seed → v1(3단계 도출 후) → ...
+track: A                # A: active_from A 패싯만 주석 · B: 전부 (policy.md §3)
 
 reserved_values:        # 모든 패싯에 자동으로 붙는다
   - id: unknown
@@ -37,6 +38,7 @@ fit_scale:              # 원형·어휘 적합도
 facets:
 
   - id: origin
+    active_from: A
     label: 기원
     question: 이 일은 무엇을 계기로 시작됐나
     multi: false
@@ -64,7 +66,7 @@ facets:
         boundary: []
       - id: ops_request
         label: 운영 요청
-        short: 운영·CS·GM이 데이터 조회·정정·설정 변경 등을 요청한 일
+        short: 운영·CS·운영자가 데이터 조회·정정·설정 변경 등을 요청한 일
         use_when: 코드 변경 없이 운영 데이터나 설정을 다루는 요청이다
         not_when: 요청이 코드 변경을 요구한다 → planned_request 또는 defect_report
         examples: []
@@ -92,6 +94,7 @@ facets:
         boundary: []
 
   - id: nature
+    active_from: A
     label: 성격
     question: 이 일의 주된 산출물은 무엇인가
     multi: false
@@ -154,6 +157,7 @@ facets:
         boundary: []
 
   - id: domain
+    active_from: B
     label: 영역
     question: 이 일이 닿는 시스템 영역은 어디인가
     multi: true
@@ -161,6 +165,7 @@ facets:
     values: []
 
   - id: response_mode
+    active_from: B
     label: 대응 모드
     question: 원인과 해법의 관계가 얼마나 보이는가 (Cynefin)
     multi: false
@@ -195,6 +200,7 @@ facets:
         boundary: []
 
   - id: time_pattern
+    active_from: B
     label: 시간 패턴
     question: 언제 생기는 일인가
     multi: false
@@ -220,13 +226,14 @@ facets:
         boundary: []
 
   - id: risk
+    active_from: A
     label: 위험 축
     question: 잘못되면 무엇이 손상되나
     multi: true
     values:
       - id: money
         label: 돈
-        short: 재화·결제·보상 지급
+        short: 결제·포인트·보상 지급
         examples: []
         boundary: []
       - id: persistent_data
@@ -246,7 +253,7 @@ facets:
         boundary: []
       - id: external_commitment
         label: 대외 약속
-        short: 퍼블리셔·플랫폼 심사·법규·공지된 일정
+        short: 파트너사·플랫폼 심사·법규·공지된 일정
         examples: []
         boundary: []
       - id: none
@@ -257,6 +264,7 @@ facets:
         boundary: []
 
   - id: failure_class
+    active_from: A
     label: 결함 유형
     question: 결함·장애라면 무엇이 잘못됐나 (ODC 결함 유형을 운영 현실에 맞게 줄이고 넓힘)
     multi: false
@@ -302,6 +310,7 @@ facets:
         short: 기획·명세의 의도와 구현이 달랐다 (확장)
 
   - id: scale
+    active_from: A
     label: 규모
     question: 얼마나 큰 일이었나 (실측 우선, 추정이면 confidence 를 낮춘다)
     multi: false
@@ -320,6 +329,7 @@ facets:
         short: 수주 이상 또는 에픽 — 하위 원형으로 분해한다
 
   - id: outcome
+    computed: stats         # L0 결정론 신호(재오픈·롤백·후속 수정·취소)로 계산. LLM이 코딩하지 않는다
     label: 결과·후속
     question: 어떻게 끝났고, 끝난 뒤 무슨 일이 있었나 (열린 창 동안 갱신)
     multi: false
@@ -341,6 +351,7 @@ facets:
         short: 끝내지 않고 멈췄다
 
   - id: roles
+    active_from: B
     label: 관계자 역할
     question: 누가 얽혔나 (역할만. 개인을 기록하지 않는다)
     multi: true
@@ -355,6 +366,7 @@ facets:
       - { id: external,   label: 외부 }
 
   - id: toil
+    active_from: B
     label: 토일
     question: SRE 기준의 토일인가 — 수작업·반복·자동화 가능·전술적·지속 가치 없음·규모 비례
     multi: false
@@ -398,6 +410,6 @@ archetype_template:
   use_when: ""
   not_when: ""
   parent: null              # 상위 원형 id (계층은 2단계까지)
-  delegation: { level: D1, rationale: "" }   # D0~D3, policy.md §위임
+  delegation: { level: D1, rationale: "" }   # D0~D3, policy.md §9
   status: active            # active | dormant
   evidence: []              # 소속 WU 앵커 참조. 승격 기준은 policy.md

@@ -28,7 +28,7 @@ schema_version: 0
   "actor_role": "self",
   "objects": [ { "type": "issue", "id": "ABC-123", "url": "…" } ],
   "keys": { "issue_keys": ["ABC-123"], "branches": [], "mr_ids": [], "paths": [], "error_signatures": [] },
-  "labels": { "component": ["match"], "label": ["hotfix"], "epic": ["EP-9"] },
+  "labels": { "component": ["billing"], "label": ["hotfix"], "epic": ["EP-9"] },
   "metrics": {},
   "excerpt_ref": null,
   "partial": false,
@@ -48,6 +48,7 @@ schema_version: 0
 | `keys` | 상관에 쓰는 조인 키. 원문에서 **결정론적으로** 뽑은 것만 |
 | `labels` | 원천 시스템에 이미 붙어 있는 분류(컴포넌트·라벨·에픽 등). 창발 원형과 비교하는 기준선 |
 | `metrics` | 결정론 수치만 (변경 줄 수, 파일 수, 응답 시간 등) |
+| `payload` | `atlas`·`self_report` 사건 전용: 사람의 입력과 그 시점의 예측. 해석이 아니라 "그때 그렇게 기록됐다"는 사실로 남긴다. 다른 소스에서는 비운다 |
 | `excerpt_ref` | 본문은 원천 시스템에 둔다. 보존 기한이 짧은 소스만 사내 캐시 참조를 둔다 |
 | `partial` | 페이지네이션·권한으로 잘린 수집이면 `true` |
 | 정정 | 잘못 수집한 사건은 고치지 않고 `kind: "correction"` 사건을 추가해 `objects` 에 대상 `obs_id` 를 건다 |
@@ -56,21 +57,31 @@ schema_version: 0
 
 ### 사용 기록 — `source.system: "atlas"`
 
-체계 자신의 사용도 관측이다. 대화 세션이 L0에 쓸 수 있는 **유일한 경로**이며, 반드시 `method/recipes/record_feedback.py` 를 거친다(append 전용).
+체계 자신의 사용과 사람의 자기 보고도 관측이다. 대화 세션이 L0에 쓸 수 있는 **유일한 경로**이며, 반드시 `method/recipes/record_event.py` 를 거친다(append 전용).
 
 트리아지 시점 — 예측을 남긴다:
 ```json
 { "kind": "atlas.triage", "objects": [ { "type": "issue", "id": "ABC-130" } ],
-  "metrics": { "use": "U1", "codebook_version": 1, "generation": "gen-2026-11",
-               "pred": { "archetype": "ops-data-fix", "archetype_conf": "medium",
-                         "pitfalls": ["missing-rollback-script"], "scale": "small" } } }
+  "payload": { "use": "U1", "codebook_version": 1, "generation": "gen-2026-11",
+               "pred": { "archetype": "ops-data-fix", "archetype_conf": "medium", "scale": "small",
+                         "pitfalls": ["missing-rollback-script"], "moves_suggested": ["snapshot-repro"] } } }
 ```
-피드백 — 도움 여부:
+피드백 — 사람의 판정과 도움 여부:
 ```json
 { "kind": "atlas.feedback", "objects": [ { "type": "issue", "id": "ABC-130" } ],
-  "metrics": { "use": "U1", "verdict": "helpful" } }
+  "payload": { "use": "U1", "archetype_ok": "yes", "verdict": "helpful" } }
 ```
-`verdict`: `helpful · not_helpful · unknown`. 예측은 WU가 확정되면 수확 단계가 채점한다(적중률·서열 보정).
+자기 보고(일일 표집):
+```json
+{ "kind": "self_report.untracked_work", "objects": [], "payload": { "text": "운영팀 요청으로 로그 조회 30분" } }
+```
+
+| 규칙 | 이유 |
+|---|---|
+| `archetype_ok`(`yes · no · unsure`)가 원형 예측의 **1차 정답**이다 | 나중의 LLM 주석을 정답으로 쓰면 LLM이 LLM을 채점하게 된다. LLM 주석과의 일치는 '일관성'으로 따로 보고한다 |
+| 원형·규모는 WU **종료 시 잠정 채점**, 함정·처리 수·결과는 **확정 시 채점** | 열린 창(30일)을 기다리면 판정이 몇 주 밀린다. 사후 결과가 필요한 항목만 기다린다 |
+| `atlas` 사건은 작업단위의 `members` 와 주석 입력에서 **제외**한다(채점 전용) | 예측이 자기 정답지로 새어 들어가지 않게 |
+| `verdict`: `helpful · not_helpful · unknown` | 보조 지표 (새로움 편향이 있다) |
 
 ## L1 작업단위 — `data/units/current.jsonl`
 
@@ -98,11 +109,24 @@ schema_version: 0
 | 규칙 | 이유 |
 |---|---|
 | `wu_id` 는 **앵커 객체**(가장 먼저 생긴 이슈·MR·스레드)에서 결정론적으로 만든다 | 재빌드해도 ID가 유지돼야 링크가 안 깨진다 |
-| `settled` 는 열린 창이 지나면 `true`. 예측 채점·통계는 확정 WU만 쓴다 | 사후 결과가 다 들어오기 전에 판정하지 않는다 |
+| `settled` 는 열린 창이 지나면 `true`. 통계와 사후 항목 채점은 확정 WU만 쓴다 | 사후 결과가 다 들어오기 전에 판정하지 않는다 |
+| `source.system` 이 `atlas` 인 사건은 `members` 에 넣지 않는다 | 예측 누수 차단 |
 | 확률 연결은 `confidence` 서열과 `signals` 를 남긴다 | 상관 레시피를 고칠 때 근거가 된다 |
 | 주석 캐시 키는 `(input_hash, annotate_recipe, codebook_version, model)` | 바뀐 것만 다시 코딩한다. 모델 교체도 드러난다 |
 | 재빌드마다 무작위 15% 는 캐시를 무시하고 다시 주석한다 | 재주석 불일치율(주석 안정성) 측정 |
 | `deterministic_signals` 는 L0 사실(재오픈·롤백·후속 수정·유발 결함)에서만 계산한다 | 카드에 실릴 함정의 자격 조건 |
+
+## WU 입력 문서 — `render_wu.py` (주석·재도출의 유일한 입력)
+
+LLM이 읽는 것은 이 문서뿐이다. 같은 WU면 언제 만들어도 같은 바이트가 나와야 한다.
+
+| 항목 | 규칙 |
+|---|---|
+| 머리 | 앵커, 기간, 소스 목록, 기존 라벨, 결정론 신호, 기술 통계 |
+| 본문 | 구성 관측을 시각순으로: 시각 · `system.kind` · 행위자 역할 · 조인 키 · 발췌 |
+| 발췌 | 원천에서 빌드 때 조회. 비밀값 마스킹, 사람 이름은 역할로 치환. 사건당·문서당 길이 상한(policy) |
+| 제외 | 주석(`annotation`), 빌드 정보(`build`), `atlas` 사건, 오버레이 — 현재 분류가 블라인드 도출에 새지 않게 |
+| 해시 | `input_hash` = 이 문서의 sha256. 주석 캐시 키의 첫 요소 |
 
 **사후 검증**(`method/recipes/validate.py`, 스키마가 아니라 레시피가 집행):
 - 값이 `unknown` 이 아니면 `evidence` 1개 이상.
@@ -149,4 +173,4 @@ schema_version: 0
 
 ## 수신함 — `inbox/YYYYMMDD-HHMM-<주제>.md`
 
-대화 세션이 남기는 제안(새 원형 후보, 코드북 문구, 함정 사례). 수확 단계가 주간 확인 질문(최대 5건)으로 올리고, 처리 결과는 오버레이·코드북 변경·반려 중 하나로 남긴다. 4주가 지나도 처리되지 않으면 만료 반려로 결정기록에 한 줄 남기고 지운다.
+대화 세션이 남기는 제안(새 원형 후보, 코드북 문구, 함정 사례). 수확 단계가 주간 확인 질문(최대 5건)으로 올리고, 처리 결과는 오버레이·코드북 변경·반려 중 하나로 남긴다. 4주가 지나도 처리되지 않으면 그 주 수확 리포트에 만료로 적고 지운다(결정기록에는 남기지 않는다 — 결정이 아니므로).

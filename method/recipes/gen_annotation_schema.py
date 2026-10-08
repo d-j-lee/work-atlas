@@ -9,6 +9,9 @@
 스키마는 조건부 키워드(if/then, anyOf 등)를 쓰지 않는다. 구조화 출력이 지원하는 키워드 범위가
 런타임마다 다를 수 있어서다(1단계에서 실측). "unknown 이 아니면 evidence 1개 이상",
 "evidence 는 그 WU 의 구성 관측" 같은 조건부 규칙은 사후 검증 레시피가 집행한다.
+
+주석 대상 패싯은 코드북의 track 과 각 패싯의 active_from 으로 정한다(트랙 A 는 판단에 바로 쓰이는 패싯만).
+computed 패싯(예: outcome)은 L0 결정론 신호로 계산하므로 LLM 스키마에서 뺀다.
 """
 from __future__ import annotations
 
@@ -21,6 +24,18 @@ import yaml  # PyYAML
 METHOD_DIR = Path(__file__).resolve().parent.parent
 CODEBOOK = METHOD_DIR / "codebook.yaml"
 OUT = METHOD_DIR / "annotation.schema.json"
+
+
+TRACK_ORDER = {"A": 0, "B": 1}
+
+
+def annotated_facets(cb: dict) -> list[dict]:
+    """LLM 이 주석할 패싯: 현재 트랙에서 켜져 있고, 결정론 계산 대상이 아닌 것."""
+    track = TRACK_ORDER[cb.get("track", "B")]
+    return [
+        f for f in cb["facets"]
+        if not f.get("computed") and TRACK_ORDER[f.get("active_from", "A")] <= track
+    ]
 
 
 def ids(items: list[dict] | None) -> list[str]:
@@ -53,7 +68,7 @@ def build(cb: dict) -> dict:
     confidence = ids(cb.get("confidence_scale"))
     fit = ids(cb.get("fit_scale"))
     vocab = cb.get("vocabularies", {}) or {}
-    facets = cb["facets"]
+    facets = annotated_facets(cb)
 
     facet_props = {
         f["id"]: {
@@ -74,7 +89,7 @@ def build(cb: dict) -> dict:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": (
-            f"GENERATED from codebook.yaml version {cb['version']} by method/recipes/gen_annotation_schema.py "
+            f"GENERATED from codebook.yaml version {cb['version']} (track {cb.get('track', 'B')}) by method/recipes/gen_annotation_schema.py "
             "— 손으로 고치지 않는다. 코드북을 고치고 다시 생성한다."
         ),
         "title": "WorkUnitAnnotation",

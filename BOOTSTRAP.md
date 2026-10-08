@@ -1,7 +1,7 @@
 # 시작 절차
 
 > 사내 Claude Code 세션을 사내 인스턴스 저장소 루트에서 열고, 단계마다 아래 프롬프트를 붙여 넣는다.
-> **트랙 A(최소 경로, 4주)를 먼저** 끝내고, 4주차 판정을 통과하면 트랙 B로 넓힌다. 근거는 `METHODOLOGY.md` §12.
+> **트랙 A(최소 경로)를 먼저** 끝내고, 판정(잠정 채점 20건 이상)을 통과하면 트랙 B로 넓힌다. 근거는 `METHODOLOGY.md` §12.
 > 각 단계는 종료 기준을 수치로 확인한 뒤 넘어간다. 시간은 사람 기준 추정치다.
 
 준비 (10분):
@@ -39,7 +39,8 @@ A1 단계(정찰 실측)다. 소스는 이슈 트래커와 형상관리 두 개�
 2) 내가 최근 한 업무 5건을 성격이 다르게 고른다(계획 기능, 결함, 운영 요청, 긴급·장애, 문의).
    두 소스에서 종단 추적해 무엇이 키로 이어지고 무엇이 안 이어지는지 보여줘.
 3) 만든다:
-   - method/sources.yaml: 소스별 수집기 종류·보존·조인 키 커버리지·편향 메모. 수치에는 [실측].
+   - method/sources.yaml: 소스별 측정값(수집기 종류·원천 보존 기한·조인 키 커버리지·편향 메모). 수치에는 [실측].
+     보존 결정은 policy.md §2 에 둔다 — 여기는 측정, 거기는 결정.
    - method/recipes/collect_<source>.py: 결정론 수집기 v0. method/schema.md L0 계약을 지킨다.
      --dry-run 으로 샘플 20줄을 내고 계약을 검증해라. 아직 data/ 에 쓰지 마라.
    - annotation.schema.json 을 claude -p --json-schema 에 실제로 넣어 짧은 더미 입력으로 한 번 돌려,
@@ -49,72 +50,77 @@ A1 단계(정찰 실측)다. 소스는 이슈 트래커와 형상관리 두 개�
 
 종료 기준: 조인 키 커버리지 수치 · 수집기 dry-run 계약 통과 · 스키마 수용 여부 실측.
 
-### A2. 백필 · 작업단위 · 블라인드 골든 (2~3시간)
+### A2. 백필 · 작업단위 · 입력 문서 · 블라인드 골든 (반나절)
 
 ```text
 A2 단계다.
 1) 수집기로 최근 3~6개월을 data/observations/ 에 백필한다(git 밖). 잘린 구간은 partial.
 2) method/recipes/stitch.py v0: 결정론 키 조인 → 확률 연결(시간 창, 행위자 역할, 텍스트 유사도).
-   연결마다 confidence 서열과 signals. 출력 data/units/current.jsonl. 다중 소스 비율·고아 비율을 출력.
-3) method/recipes/validate.py: method/schema.md 의 사후 검증 4개 규칙을 집행한다.
+   연결마다 confidence 서열과 signals. atlas 사건은 members 에서 뺀다. 출력 data/units/current.jsonl.
+   다중 소스 비율·고아 비율을 출력.
+3) method/recipes/render_wu.py: method/schema.md "WU 입력 문서" 계약대로 WU마다 결정론 문서를 만든다.
+   주석·재도출이 공통으로 쓰는 유일한 입력이다. 주석·빌드 정보·atlas 사건은 넣지 않는다.
 4) 블라인드 골든 20건: WU에서 층화 표본을 고른다(규모·기원이 고르게, 장애·롤백 흔적 있는 것 포함).
-   먼저 나에게 앵커 링크와 관측 발췌만 보여주고 패싯 라벨을 받는다. 내 답을 받은 뒤에만 네 제안을 보여줘라.
-   method/golden/labels.csv 에 blind=true, codebook_version 과 함께 기록한다.
+   먼저 나에게 입력 문서만 보여주고 트랙 A 패싯(codebook active_from: A) 라벨을 받는다.
+   내 답을 받은 뒤에만 네 제안을 보여줘라. method/golden/labels.csv 에 blind=true, codebook_version 과 함께 기록한다.
 ```
 
-종료 기준: WU 약 100건 `[추정]` · 블라인드 골든 20건 · 다중 소스·고아 비율 기준선.
+종료 기준: WU 약 100건 `[추정]` · 입력 문서 생성 · 블라인드 골든 20건 · 다중 소스·고아 비율 기준선.
 
 ### A3. 첫 도출 (2시간)
 
 ```text
 A3 단계(첫 원형 도출)다. METHODOLOGY.md §6.1 을 축소해서 한다.
-1) 이 세션에서 개방 코딩 1회: 전체 WU를 훑어 후보 원형·함정·하위작업을 만든다.
-2) 격리 블라인드 도출 1회: 새 임시 폴더에 표본 WU 파일만 넣고(예외 트랙 WU는 반드시 포함),
-   그 폴더에서 method/recipes/rederive_prompt.md 를 claude --bare -p 로 실행한다.
+1) 이 세션에서 개방 코딩 1회: 입력 문서를 훑어 후보 원형·함정·하위작업·처리 수를 만든다.
+2) 격리 블라인드 도출 1회: 새 임시 폴더에 표본 WU의 입력 문서만 넣고(예외 트랙 WU는 반드시 포함),
+   그 폴더에서 claude --bare -p 로 실행한다. 프롬프트는 method/recipes/rederive_prompt.md 의 --- 아래 본문만 보내고,
+   시드 없는 실행이므로 {{SEEDED}} 는 빈 문자열로 바꾼다.
    이 저장소의 문서·코드북·네 1)번 결과가 그 프로세스에 보이면 안 된다.
 3) 두 결과를 소속 WU 겹침으로 대응시켜 비교표를 보여주고, 원형 10개 이하로 병합하는 안을 낸다.
-   예외 트랙(장애·롤백·후속 수정·재화 사고) 범주는 1건이어도 남긴다.
+   예외 트랙(장애·롤백·후속 수정·결제 사고) 범주는 1건이어도 남긴다.
 4) 내가 채택한 원형과 어휘를 codebook.yaml 에 코드북 형식으로 기록한다(examples 는 실제 WU 앵커만).
    version 을 1로 올리고 스키마를 다시 생성한다. 골든셋 20건에 원형 라벨을 블라인드로 받는다.
 ```
 
 종료 기준: 원형 v1(10개 이하) · 잔차 목록 · 골든셋 원형 라벨.
 
-### A4. U1 트리아지 (1~2시간)
+### A4. U1 트리아지 (2~3시간)
 
 ```text
 A4 단계다. U1 트리아지만 구현한다.
-1) method/recipes/annotate.py: claude --bare -p --output-format json --json-schema "$(cat method/annotation.schema.json)"
-   로 WU를 주석하고 structured_output 을 받는다. 캐시 키는 (input_hash, recipe, codebook_version, model).
-   실행마다 total_cost_usd 를 build/MANIFEST.json 의 cost_usd 에 합산한다. --max-budget-usd 로 상한을 건다.
-2) method/recipes/cards.py: 원형 카드를 build/cards/ 에 만든다. 형식은 METHODOLOGY.md §8,
-   함정은 결정론 신호가 있는 근거 WU만. 끝에 build/MANIFEST.json 을 쓴다.
-3) method/recipes/record_feedback.py: atlas.triage(예측)·atlas.feedback(도움 여부) 사건을
+1) method/recipes/annotate.py: render_wu.py 문서를 입력으로
+   claude --bare -p --output-format json --json-schema "$(cat method/annotation.schema.json)" 를 호출하고
+   structured_output 을 받는다. 캐시 키는 (input_hash, recipe, codebook_version, model), input_hash 는 입력 문서의 sha256.
+   --max-budget-usd 로 실행마다 상한을 건다.
+2) method/recipes/validate.py: method/schema.md 사후 검증 규칙을 집행한다(위반 값은 unknown 으로 강등, 건수 기록).
+3) method/recipes/cards.py: 원형 카드를 build/cards/ 에 만든다. 형식은 METHODOLOGY.md §8.
+   카드에는 어휘 id와 건수만 둔다(WU 링크 없음). 함정은 결정론 신호가 있는 것만.
+   빌드 전체(주석 포함)의 비용 합계와 함께 build/MANIFEST.json 을 마지막에 쓴다.
+4) method/recipes/similar.py: 유사 사례 결정론 순위 — 같은 원형 → 영역·경로·오류 시그니처 겹침 → 최근 확정 WU.
+   결과의 앵커 링크는 조회 시점에 data/ 에서 붙인다.
+5) method/recipes/record_event.py: atlas.triage(예측)·atlas.feedback(판정·도움 여부)·self_report 사건을
    data/observations/ 에 append 한다. 대화 세션이 L0에 쓰는 유일한 경로다.
-4) 개인 스킬 ~/.claude/skills/atlas/SKILL.md 를 짧게 만든다.
-   - description: 업무 링크·요청·장애 증상을 받았을 때 원형을 판별하고 카드를 보여준다.
-   - 본문: 이 저장소의 build/ 를 읽어 U1 브리프를 낸다(원형·패싯 추정과 서열 신뢰도, 숨은 하위작업,
-     함정 상위 3개와 근거, 결과가 좋았던 처리 수와 건수, 관계자, 예상 규모, 위임 수준, 유사 사례 3건). 예측은 record_feedback.py 로 기록하고,
-     끝나면 "도움 됨·안 됨·모름"을 묻는다. 카드 본문은 복사하지 말고 파일 경로로 참조한다.
-5) 실제 업무 3건에 써 보고 결과를 보여줘.
+6) 사용 스킬: method/skill/atlas/SKILL.md 의 ATLAS_HOME 을 이 저장소 절대 경로로 채우고,
+   ~/.claude/skills/atlas 로 심볼릭 링크한다. 서버 코드 저장소 등 어디서 작업하든 이 스킬이 같은 규칙으로 동작한다.
+7) 실제 업무 3건에 써 보고 결과를 보여줘.
 ```
 
-종료 기준: 실제 업무 3건 사용 · L0에 예측·피드백 사건 · `check_integrity.py` 통과.
+종료 기준: 실제 업무 3건 사용 · L0에 예측·판정 사건 · `check_integrity.py` 통과.
 
 ### A5. 운영 (주 10분)
 
 ```text
 A5 단계다. policy.md §1 의 실행 위치에 맞춰 주기 작업을 정의한다.
-- 일일 표집: 하루 한 번 "오늘 기록 없이 한 일" 한 줄을 묻고 self_report 사건으로 남긴다.
-- 주간 수확(무인): 수집 → WU 확정·열린 창 갱신 → 확정 WU의 예측 채점(적중률·서열 보정)
-  → reports/YYYY-MM-DD-harvest.md (델타, 확인 질문 5건 이내: 불확실 WU와 수신함 합산).
-- 월간 재빌드: 무작위 15% 재주석 포함 → build/ 교체 + 지표 표 → 내가 git tag gen-YYYY-MM 으로 채택.
+- 일일 표집: 하루 한 번 "오늘 기록 없이 한 일" 한 줄을 묻고 record_event.py 로 self_report 사건을 남긴다.
+- 주간 수확(무인): 수집 → WU 갱신 → 예측 채점(원형·규모는 WU 종료 시 잠정, 함정·처리 수·결과는 확정 시)
+  → data/reports/YYYY-MM-DD-harvest.md (git 밖. 델타, 확인 질문 5건 이내: 불확실 WU와 수신함 합산, 만료된 수신함 항목).
+- 월간 재빌드: 무작위 15% 재주석 포함 → build/ 교체 + 지표 표(원형 단위 집계는 reports/) → 내가 git tag gen-YYYY-MM 으로 채택.
 - 무인 호출은 --bare, --permission-mode dontAsk, 최소 --allowedTools, --max-turns, --max-budget-usd,
   필요하면 --mcp-config 와 --strict-mcp-config 로 범위를 닫는다.
 - 알림: 정상·무변동은 침묵. 사람 결정이 필요한 것, 지표 경고, 실행 실패만 알린다.
 ```
 
-**4주차 판정**: 원형 예측 적중률과 "도움 됨"(policy.md §7). 미달이면 카드가 아니라 용도와 트리거 지점을 다시 설계한다. 통과하면 트랙 B.
+**판정**: 달력 4주가 아니라 **잠정 채점 20건 이상**이 쌓였을 때 한다(대개 4~8주). 원형 예측 적중률(사람 판정 기준)과 "도움 됨"(policy.md §7)을 본다. 미달이면 카드가 아니라 용도와 트리거 지점을 다시 설계한다. 통과하면 트랙 B.
 
 ---
 

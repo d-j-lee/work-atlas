@@ -7,7 +7,8 @@
   3. overlays/*.yaml 항목에 target·op·reason·expires 가 있는가 (만료된 항목은 경고만)
   4. data/ 가 git 에 추적되고 있지 않은가 (관측·WU 단위 데이터는 git 밖 — 보존 정책 집행을 위해)
   5. 루트에 .template 이 있으면(공개 템플릿 저장소) 사내 인스턴스 유래 내용이 없는가
-     — 채워진 원형·어휘·예시·영역 값, 골든셋·결정기록·소스 지도, 운영 디렉터리
+     — 추적 파일이 허용 목록 안에 있는가(허용 목록 방식: 새 파일은 의식적으로 추가해야 한다),
+       코드북의 원형·어휘·예시·도출 값이 비어 있는가, policy.md 가 빈칸 상태인가
 
 사용: python3 method/recipes/check_integrity.py      (.githooks/pre-commit 이 호출)
 """
@@ -89,10 +90,15 @@ def check_data_untracked() -> None:
         errors.append("data/ 가 git 에 추적되고 있다 → git rm --cached -r data 후 .gitignore 확인")
 
 
-TEMPLATE_FORBIDDEN_PATHS = [
-    "data", "build", "overlays", "inbox", "reports",
-    "method/golden", "method/DECISIONS.md", "method/sources.yaml",
-]
+# 공개 템플릿에 존재해도 되는 추적 파일. 템플릿에 일반화된 파일을 새로 넣을 때만 여기에 추가한다.
+TEMPLATE_ALLOWED = {
+    ".claude/settings.json", ".gitattributes", ".githooks/pre-commit", ".github/workflows/integrity.yml",
+    ".gitignore", ".template", "BOOTSTRAP.md", "CHANGELOG.md", "CLAUDE.md", "LICENSE", "METHODOLOGY.md",
+    "README.md", "requirements.txt",
+    "method/annotation.schema.json", "method/codebook.yaml", "method/policy.md", "method/schema.md",
+    "method/recipes/check_integrity.py", "method/recipes/gen_annotation_schema.py",
+    "method/recipes/rederive_prompt.md", "method/skill/atlas/SKILL.md",
+}
 
 
 def check_template() -> None:
@@ -112,9 +118,16 @@ def check_template() -> None:
         for value in facet.get("values", []):
             if value.get("examples") or value.get("boundary"):
                 errors.append(f"codebook {facet['id']}.{value['id']} 에 예시·경계 사례가 있다. {leak}")
-    for rel in TEMPLATE_FORBIDDEN_PATHS:
-        if (ROOT / rel).exists():
-            errors.append(f"{rel} 가 있다. {leak}")
+    policy = (ROOT / "method" / "policy.md").read_text(encoding="utf-8")
+    if "policy_version: 0" not in policy or "______" not in policy:
+        errors.append(f"policy.md 가 빈칸(______)·policy_version 0 상태가 아니다 — 사내 값이 채워진 것으로 보인다. {leak}")
+    try:
+        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        warnings.append("git 을 쓸 수 없어 템플릿 허용 목록 검사를 건너뛴다")
+        return
+    for rel in sorted(set(tracked) - TEMPLATE_ALLOWED):
+        errors.append(f"{rel} 는 템플릿 허용 목록에 없다. 일반화된 파일이면 check_integrity.py 의 TEMPLATE_ALLOWED 에 추가하고, 아니면 빼라")
 
 
 def main() -> int:
