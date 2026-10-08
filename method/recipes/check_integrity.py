@@ -6,6 +6,8 @@
   2. build/ 의 파일이 build/MANIFEST.json 의 해시와 같은가 (생성물 손 편집 탐지)
   3. overlays/*.yaml 항목에 target·op·reason·expires 가 있는가 (만료된 항목은 경고만)
   4. data/ 가 git 에 추적되고 있지 않은가 (관측·WU 단위 데이터는 git 밖 — 보존 정책 집행을 위해)
+  5. 루트에 .template 이 있으면(공개 템플릿 저장소) 사내 인스턴스 유래 내용이 없는가
+     — 채워진 원형·어휘·예시·영역 값, 골든셋·결정기록·소스 지도, 운영 디렉터리
 
 사용: python3 method/recipes/check_integrity.py      (.githooks/pre-commit 이 호출)
 """
@@ -87,7 +89,36 @@ def check_data_untracked() -> None:
         errors.append("data/ 가 git 에 추적되고 있다 → git rm --cached -r data 후 .gitignore 확인")
 
 
+TEMPLATE_FORBIDDEN_PATHS = [
+    "data", "build", "overlays", "inbox", "reports",
+    "method/golden", "method/DECISIONS.md", "method/sources.yaml",
+]
+
+
+def check_template() -> None:
+    """공개 템플릿에 사내 업무에서 유래한 내용이 섞이지 않게 한다. 흐름은 템플릿 → 인스턴스 한 방향이다."""
+    if not (ROOT / ".template").exists():
+        return
+    cb = yaml.safe_load((ROOT / "method" / "codebook.yaml").read_text(encoding="utf-8"))
+    leak = "템플릿에 사내 인스턴스 유래 내용이 있다 → 공개 저장소에 올리지 않는다"
+    if cb.get("archetypes"):
+        errors.append(f"codebook.archetypes 가 비어 있지 않다. {leak}")
+    for name, items in (cb.get("vocabularies") or {}).items():
+        if items:
+            errors.append(f"codebook.vocabularies.{name} 가 비어 있지 않다. {leak}")
+    for facet in cb.get("facets", []):
+        if facet.get("derive_from") and facet.get("values"):
+            errors.append(f"codebook 패싯 {facet['id']} 의 도출 값이 채워져 있다. {leak}")
+        for value in facet.get("values", []):
+            if value.get("examples") or value.get("boundary"):
+                errors.append(f"codebook {facet['id']}.{value['id']} 에 예시·경계 사례가 있다. {leak}")
+    for rel in TEMPLATE_FORBIDDEN_PATHS:
+        if (ROOT / rel).exists():
+            errors.append(f"{rel} 가 있다. {leak}")
+
+
 def main() -> int:
+    check_template()
     check_schema()
     check_build()
     check_overlays()

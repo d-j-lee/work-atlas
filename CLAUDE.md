@@ -3,7 +3,7 @@
 이 저장소는 내 실제 업무를 관측·분류해 트리아지·실행·사후 대응에 쓰는 체계다.
 왜 이렇게 생겼는지는 `METHODOLOGY.md`, 시작 절차는 `BOOTSTRAP.md`, 수치의 정본은 `method/policy.md`, 데이터 계약은 `method/schema.md`.
 
-> 템플릿 저장소(회사 데이터 없음)에서는 `data/`·`build/`·`overlays/` 가 없다. 거기서는 방법(`METHODOLOGY.md`·`method/`)만 다듬는다.
+> 루트에 `.template` 이 있으면 공개 템플릿 저장소다. 거기서는 일반화된 방법(`METHODOLOGY.md`·`method/`)만 다듬고, 사내 업무에서 유래한 내용(원형·어휘·예시·골든셋·결정기록·운영 데이터)은 넣지 않는다 — 무결성 검사가 거부한다.
 
 ## 계층과 쓰기 권한
 

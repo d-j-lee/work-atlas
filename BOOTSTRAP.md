@@ -5,7 +5,8 @@
 > 각 단계는 종료 기준을 수치로 확인한 뒤 넘어간다. 시간은 사람 기준 추정치다.
 
 준비 (10분):
-1. 이 템플릿을 사내 private 저장소로 복제한다. 회사 데이터는 사내 인스턴스에만 둔다.
+1. 이 템플릿을 사내 private 저장소로 복제하고 `.template` 파일을 지운다(템플릿 전용 검사 해제). 회사 데이터는 사내 인스턴스에만 둔다.
+   `LICENSE`(MIT 고지)는 지우지 않는다. 회사에 오픈소스 관리 절차가 있으면 반입 목록에 등록한다.
 2. `git config core.hooksPath .githooks` — 커밋 전 무결성 검사를 켠다.
 3. `pip install -r requirements.txt` 후 `python3 method/recipes/check_integrity.py` 가 `integrity ok` 를 내는지 본다.
 
