@@ -1,8 +1,10 @@
 # work-atlas
 
+[![integrity](https://github.com/d-j-lee/work-atlas/actions/workflows/integrity.yml/badge.svg)](https://github.com/d-j-lee/work-atlas/actions/workflows/integrity.yml)
+
 실무 개발자 1인과 AI의 **실제 업무를 주기적으로 관측하고 분류해서**, 새 일이 들어왔을 때 정체 파악·실행 품질·사후 대처·예외 대응을 빠르게 하도록 돕는 체계의 **방법론과 템플릿**.
 
-이 저장소에는 회사 데이터가 없다. 실제 운영은 사내 private 저장소에 복제해서 한다.
+**공개 템플릿이다. 실제 업무 데이터는 여기에 두지 않는다.** 운영은 사내 private 저장소에 복제해서 하고, 관측 데이터(`data/`)는 `.gitignore`와 커밋 전 검사가 git 밖으로 막는다.
 
 ## 핵심 아이디어
 
@@ -25,12 +27,13 @@
 | [`method/policy.md`](method/policy.md) | 경계·예산·임계치·트리거·위임 — 수치의 정본 |
 | `method/annotation.schema.json` | LLM 주석 출력 스키마 (코드북에서 생성, 손 편집 금지) |
 | `method/recipes/` | 스키마 생성기, 무결성 검사, 재도출 고정 프롬프트 |
+| `.github/workflows/integrity.yml` | 푸시·PR마다 같은 무결성 검사를 서버에서 실행 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 템플릿 버전과 설계 결정 |
 
 ## 사용법
 
 1. 이 저장소를 사내 private 저장소로 복제한다.
-2. `git config core.hooksPath .githooks` 로 커밋 전 무결성 검사를 켠다 (`pyyaml`, `jsonschema` 필요).
+2. `pip install -r requirements.txt` 후 `git config core.hooksPath .githooks` 로 커밋 전 무결성 검사를 켠다.
 3. 사내 Claude Code에서 [`BOOTSTRAP.md`](BOOTSTRAP.md) 의 A0부터 진행한다.
 
 방법 자체를 개선할 때는 이 템플릿 저장소에서 `METHODOLOGY.md`·`method/` 를 고치고, 사내 인스턴스에 반영한다.
@@ -39,3 +42,7 @@
 
 - 템플릿 v1.0 (2026-10-08). 설계와 시드까지. **실제 업무 데이터로 검증하기 전이다.** 수치는 모두 보정 대상 초기값이다.
 - 다음: 사내 인스턴스에서 트랙 A의 A0·A1 실측 → 그 결과로 시드(패싯·임계치)를 첫 보정.
+
+## 라이선스
+
+MIT — [`LICENSE`](LICENSE). 참고문헌의 연구들은 각 저작권자에게 있으며, 이 저장소는 인용·요약만 한다.

@@ -7,7 +7,7 @@
 준비 (10분):
 1. 이 템플릿을 사내 private 저장소로 복제한다. 회사 데이터는 사내 인스턴스에만 둔다.
 2. `git config core.hooksPath .githooks` — 커밋 전 무결성 검사를 켠다.
-3. `pip install pyyaml jsonschema` 후 `python3 method/recipes/check_integrity.py` 가 `integrity ok` 를 내는지 본다.
+3. `pip install -r requirements.txt` 후 `python3 method/recipes/check_integrity.py` 가 `integrity ok` 를 내는지 본다.
 
 ---
 

@@ -1,0 +1,4 @@
+# method/recipes 실행에 필요한 최소 의존성
+pyyaml>=6.0
+# 주석 스키마의 메타스키마 검증과 사후 검증 레시피(validate.py)에 쓴다
+jsonschema>=4.18
