@@ -1,0 +1,26 @@
+# 로컬 커밋 전 훅(.githooks/pre-commit)은 켜야 동작한다.
+# 같은 검사를 푸시·PR마다 서버에서도 돌려, 규칙 위반이 조용히 들어오지 않게 한다.
+name: integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: 무결성 검사 (스키마 드리프트 · MANIFEST · 오버레이 · data 비추적)
+        run: python method/recipes/check_integrity.py
+      - name: 주석 스키마가 유효한 JSON Schema 인가
+        run: |
+          python -c "import json, jsonschema; jsonschema.Draft202012Validator.check_schema(json.load(open('method/annotation.schema.json', encoding='utf-8'))); print('schema ok')"
