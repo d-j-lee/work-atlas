@@ -281,7 +281,6 @@
           "id": {
             "type": "string",
             "enum": [
-              "unknown",
               "residual"
             ]
           },
@@ -313,7 +312,6 @@
           "id": {
             "type": "string",
             "enum": [
-              "unknown",
               "residual"
             ]
           },
@@ -345,7 +343,6 @@
           "id": {
             "type": "string",
             "enum": [
-              "unknown",
               "residual"
             ]
           },

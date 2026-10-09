@@ -21,7 +21,7 @@ reserved_values:        # 모든 패싯에 자동으로 붙는다
 
 confidence_scale:       # LLM 숫자 대신 근거로 정의된 서열 (METHODOLOGY.md §5.5)
   - id: high
-    short: 직접 근거 관측 2개 이상, 또는 결정론 신호(상태·링크·수치)로 확인됨
+    short: 서로 다른 직접 근거 관측 2개 이상 (validate.py R3 이 집행)
   - id: medium
     short: 직접 근거 관측 1개
   - id: low
@@ -149,9 +149,9 @@ facets:
         examples: []
         boundary: []
       - id: org_activity
-        label: 조직 활동
-        short: 면접·교육·평가·채용 등 조직 운영 활동
-        use_when: 제품·서비스가 아니라 조직이 산출물의 수혜자다
+        label: 조직·업무 외 활동
+        short: 면접·교육·평가·채용·사내 행사·학습 등 제품·서비스 밖의 활동
+        use_when: 제품·서비스가 아니라 조직이나 본인이 수혜자다
         not_when: 팀 개발 프로세스 개선 도구 제작 → build_new
         examples: []
         boundary: []

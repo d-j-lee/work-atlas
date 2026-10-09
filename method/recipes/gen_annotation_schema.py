@@ -21,21 +21,17 @@ from pathlib import Path
 
 import yaml  # PyYAML
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _common import Codebook  # noqa: E402
+
 METHOD_DIR = Path(__file__).resolve().parent.parent
 CODEBOOK = METHOD_DIR / "codebook.yaml"
 OUT = METHOD_DIR / "annotation.schema.json"
 
 
-TRACK_ORDER = {"A": 0, "B": 1}
-
-
 def annotated_facets(cb: dict) -> list[dict]:
-    """LLM 이 주석할 패싯: 현재 트랙에서 켜져 있고, 결정론 계산 대상이 아닌 것."""
-    track = TRACK_ORDER[cb.get("track", "B")]
-    return [
-        f for f in cb["facets"]
-        if not f.get("computed") and TRACK_ORDER[f.get("active_from", "A")] <= track
-    ]
+    """LLM 이 주석할 패싯 — 판단은 _common.Codebook 한 곳에 둔다(validate.py 와 같은 기준)."""
+    return Codebook(cb).annotated_facets()
 
 
 def ids(items: list[dict] | None) -> list[str]:
@@ -49,13 +45,14 @@ def facet_value_schema(facet: dict, reserved: list[str]) -> dict:
     return {"type": "array", "items": item} if facet.get("multi") else item
 
 
-def vocab_claim(vocab_ids: list[str], reserved: list[str], what: str) -> dict:
+def vocab_claim(vocab_ids: list[str], what: str) -> dict:
+    """어휘 항목은 있거나 없거나다 — 'unknown' 항목은 뜻이 없으므로 residual 만 예약어로 허용한다."""
     return {
         "type": "object",
         "additionalProperties": False,
         "required": ["id", "note", "confidence", "evidence"],
         "properties": {
-            "id": {"type": "string", "enum": vocab_ids + reserved},
+            "id": {"type": "string", "enum": vocab_ids + ["residual"]},
             "note": {"type": "string", "description": f"residual 이면 새 {what} 후보를 한 줄로. 아니면 이 WU 에서의 구체 내용"},
             "confidence": {"$ref": "#/$defs/confidence"},
             "evidence": {"$ref": "#/$defs/evidence"},
@@ -121,11 +118,11 @@ def build(cb: dict) -> dict:
                     "candidate_note": {"type": "string", "description": "residual 이면 새 원형 후보 한 줄. 아니면 빈 문자열"},
                 },
             },
-            "hidden_subtasks": {"type": "array", "items": vocab_claim(ids(vocab.get("subtasks")), reserved, "하위작업")},
-            "pitfalls": {"type": "array", "items": vocab_claim(ids(vocab.get("pitfalls")), reserved, "함정")},
+            "hidden_subtasks": {"type": "array", "items": vocab_claim(ids(vocab.get("subtasks")), "하위작업")},
+            "pitfalls": {"type": "array", "items": vocab_claim(ids(vocab.get("pitfalls")), "함정")},
             "moves": {
                 "type": "array",
-                "items": vocab_claim(ids(vocab.get("moves")), reserved, "처리 수"),
+                "items": vocab_claim(ids(vocab.get("moves")), "처리 수"),
                 "description": "진행·해결에서 실제로 취한 결정적 행동. 관측된 행동만 — 의도·바람직한 절차를 추정하지 않는다",
             },
             "open_questions": {

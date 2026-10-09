@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "L0 관측 한 줄의 기계 계약. 손으로 관리한다(생성물 아님). 규칙과 이유는 method/schema.md. 필드를 바꾸면 schema.md 의 schema_version 을 올린다.",
+  "title": "Observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "obs_id", "source", "kind", "ts", "actor_role", "objects", "keys",
+    "metrics", "partial", "collector", "collected_at"
+  ],
+  "properties": {
+    "obs_id": { "type": "string", "minLength": 3, "description": "결정론적이고 재수집해도 같은 값. 중복 제거 키" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "instance", "collector_kind"],
+      "properties": {
+        "system": {
+          "enum": ["issue", "vcs", "ci_cd", "deploy", "wiki", "mail", "chat", "calendar", "monitor", "ai_session", "self_report", "atlas"]
+        },
+        "instance": { "type": "string" },
+        "collector_kind": {
+          "enum": ["api", "cli", "mcp_sdk", "llm_mediated", "human"],
+          "description": "human 은 사람이 record_event.py 로 남긴 사건(atlas·self_report). llm_mediated 는 결정론 보장 밖"
+        }
+      }
+    },
+    "kind": { "type": "string", "pattern": "^[a-z_]+\\.[a-z_]+(\\.[a-z_]+)*$", "description": "<system>.<event>. 접두가 source.system 과 같아야 한다(레시피가 검사)" },
+    "ts": { "$ref": "#/$defs/datetime" },
+    "actor_role": { "type": "string", "description": "self · bot · unknown · codebook roles 의 id. 개인 식별자 금지(레시피가 검사)" },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "id"],
+        "properties": {
+          "type": { "type": "string", "pattern": "^[a-z_]+$" },
+          "id": { "type": "string", "minLength": 1 },
+          "url": { "type": "string" }
+        }
+      }
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } },
+      "description": "상관에 쓰는 조인 키. 원문에서 결정론적으로 뽑은 것만"
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } },
+      "description": "원천 시스템에 이미 붙어 있는 분류(컴포넌트·라벨·에픽)"
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": { "type": ["number", "boolean"] },
+      "description": "결정론 수치만. 문자열은 해석을 부르므로 받지 않는다"
+    },
+    "payload": { "type": "object", "description": "atlas·self_report 전용: 사람의 입력과 그 시점의 예측" },
+    "excerpt_ref": { "type": ["string", "null"] },
+    "partial": { "type": "boolean" },
+    "collector": { "type": "string", "minLength": 1 },
+    "collected_at": { "$ref": "#/$defs/datetime" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "source": { "properties": { "system": { "enum": ["atlas", "self_report"] } } } } },
+      "then": { "required": ["payload"] },
+      "else": { "not": { "required": ["payload"] } }
+    }
+  ],
+  "$defs": {
+    "datetime": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "description": "ISO 8601, 시간대 필수"
+    }
+  }
+}

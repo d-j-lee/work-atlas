@@ -95,9 +95,12 @@ TEMPLATE_ALLOWED = {
     ".claude/settings.json", ".gitattributes", ".githooks/pre-commit", ".github/workflows/integrity.yml",
     ".gitignore", ".template", "BOOTSTRAP.md", "CHANGELOG.md", "CLAUDE.md", "LICENSE", "METHODOLOGY.md",
     "README.md", "requirements.txt",
-    "method/annotation.schema.json", "method/codebook.yaml", "method/policy.md", "method/schema.md",
-    "method/recipes/check_integrity.py", "method/recipes/gen_annotation_schema.py",
-    "method/recipes/rederive_prompt.md", "method/skill/atlas/SKILL.md",
+    "method/annotation.schema.json", "method/codebook.yaml", "method/observation.schema.json",
+    "method/policy.md", "method/schema.md", "method/skill/atlas/SKILL.md",
+    "method/recipes/_common.py", "method/recipes/check_integrity.py", "method/recipes/gen_annotation_schema.py",
+    "method/recipes/record_event.py", "method/recipes/render_wu.py", "method/recipes/rederive_prompt.md",
+    "method/recipes/score.py", "method/recipes/similar.py", "method/recipes/validate.py",
+    "tests/test_recipes.py",
 }
 
 
