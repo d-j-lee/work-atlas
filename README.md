@@ -68,12 +68,18 @@ atlas eval --cutoff 2026-01-01 --horizon-days 90   # 내 저장소에서 효용 
 
 ```mermaid
 flowchart LR
-  S["git · Jira · Claude Code<br/>(+ 사내 수집기 → ingest)"] -->|collect| L0["관측 L0<br/>append-only"]
-  L0 -->|stitch| L1["작업단위 L1<br/>문제·처리·결과"]
-  L1 -->|mine| L2["주장 L2<br/>동반 변경·핫스팟·처리 통계·유사 작업"]
-  L2 --> M["카탈로그<br/>메타·경고·세대 변화"]
+  S["git · Jira · Claude Code<br/>(+ 사내 수집기 → ingest)"] -->|"collect · 읽기만"| L0
+  subgraph CANON["정본 · 덧붙이기만"]
+    L0["관측 L0"]
+  end
+  subgraph DER["파생 · 매번 처음부터 다시"]
+    L1["작업단위 L1<br/>문제·처리·결과"] -->|mine| L2["주장 L2<br/>동반 변경·핫스팟·처리 통계·유사 작업"]
+    L2 --> M["카탈로그<br/>메타·경고·세대 변화"]
+  end
+  L0 -->|stitch| L1
   L2 & M --> C["맥락 · 훅 · MCP · 업무 지도"]
-  C -- "예측·판정" --> L0
+  C ==>|"atlas record: 예측·판정"| L0
+  L0 -.->|"atlas eval: 효용 측정"| C
 ```
 
 - **두 층의 지식.**
