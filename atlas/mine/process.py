@@ -132,7 +132,7 @@ def mine_practice(units: list[dict], corpus, scope_of) -> list[dict]:
 
 
 def mine_moves(units: list[dict], scope_of) -> list[dict]:
-    """주석된 처리 수 × 결과 — 원형별. 주석이 없으면 아무것도 내지 않는다."""
+    """주석된 처리 수별 결과 — 원형별. 주석이 없으면 아무것도 내지 않는다."""
     cells: dict[tuple, list] = defaultdict(list)
     for u in units:
         ann = u.get("annotation") or {}

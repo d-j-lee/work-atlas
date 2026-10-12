@@ -97,7 +97,7 @@ def check_data_untracked() -> None:
 TEMPLATE_ALLOWED = [
     ".claude/settings.json", ".gitattributes", ".githooks/pre-commit", ".github/workflows/*.yml",
     ".gitignore", ".template", "LICENSE", "requirements.txt", "pyproject.toml", "atlas.example.toml",
-    "README.md", "METHODOLOGY.md", "ARCHITECTURE.md", "BOOTSTRAP.md", "CLAUDE.md", "CHANGELOG.md", "EVALUATION.md",
+    "README.md", "CONCEPTS.md", "METHODOLOGY.md", "ARCHITECTURE.md", "BOOTSTRAP.md", "CLAUDE.md", "CHANGELOG.md", "EVALUATION.md",
     "method/annotation.schema.json", "method/observation.schema.json", "method/codebook.yaml",
     "method/policy.md", "method/schema.md", "method/prompts/*.md", "method/skill/atlas/SKILL.md",
     "atlas/*.py", "atlas/**/*.py", "tests/*.py",

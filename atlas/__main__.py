@@ -17,7 +17,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "render": ("atlas.render", "WU 입력 문서(LLM 이 읽는 유일한 입력)를 만든다"),
     "validate": ("atlas.validate", "LLM 주석을 근거 규칙으로 사후 검증한다"),
     # 마이닝 → 메타
-    "mine": ("atlas.mine", "주장(claim)을 캐낸다 — 동반 변경 · 핫스팟 · 프로세스 · 처리 수 × 결과"),
+    "mine": ("atlas.mine", "주장(claim)을 캐낸다 — 동반 변경 · 핫스팟 · 처리 통계 · 처리 수별 결과"),
     "catalog": ("atlas.catalog", "데이터·지식의 메타데이터와 세대 간 변화를 낸다"),
     "build": ("atlas.pipeline", "stitch → render → validate → mine → catalog → report 를 한 번에"),
     # 소비

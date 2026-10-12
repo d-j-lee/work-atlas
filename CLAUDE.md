@@ -1,7 +1,7 @@
 # work-atlas — AI 운영 규칙
 
 이 저장소는 현업의 업무 처리 지식(문제·처리·결과)을 관측해 다음 일의 트리아지·실행·사후 대응에 다시 쓰는 체계다.
-왜 이렇게 생겼는지는 `METHODOLOGY.md`, 엔진 구조는 `ARCHITECTURE.md`, 효용 실측은 `EVALUATION.md`, 시작 절차는 `BOOTSTRAP.md`.
+개념과 용어는 `CONCEPTS.md`, 왜 이렇게 생겼는지는 `METHODOLOGY.md`, 엔진 구조는 `ARCHITECTURE.md`, 효용 실측은 `EVALUATION.md`, 시작 절차는 `BOOTSTRAP.md`.
 사람이 정하는 수치의 정본은 `method/policy.md`, 엔진이 읽는 설정은 `atlas.toml`, 데이터 계약은 `method/schema.md`.
 
 > 루트에 `.template` 이 있으면 공개 템플릿 저장소다. 거기서는 일반화된 방법(`METHODOLOGY.md`·`method/`)만 다듬고, 사내 업무에서 유래한 내용(원형·어휘·예시·골든셋·결정기록·운영 데이터)은 넣지 않는다 — 무결성 검사가 거부한다.
@@ -23,7 +23,7 @@
 
 1. **결과가 이상하면 `out/` 를 고치지 않는다.** 원인을 수집기·`method/`·`overlays/` 에서 찾아 고치고 다시 빌드한다.
 2. L0에 해석(요약·분류·추정)을 넣지 않는다. 결정론적으로 뽑은 값만 들어간다. 예외는 `atlas`·`self_report` 사건의 `payload` — 사람의 입력과 그 시점의 예측을 사실로 기록한 것이다.
-3. LLM이 만든 값에는 근거 `obs_id` 를 단다. 근거가 없으면 `unknown` 이다. 그럴듯한 값으로 채우지 않는다. 신뢰도는 숫자가 아니라 `high·medium·low` 서열이고 정의는 `codebook.yaml` 에 있다.
+3. LLM이 만든 값에는 근거 `obs_id` 를 단다. 근거가 없으면 `unknown` 이다. 그럴듯한 값으로 채우지 않는다. LLM 값의 신뢰도(`conf`)는 숫자가 아니라 `high·medium·low` 서열이고 정의는 `codebook.yaml` 에 있다(동반 변경의 신뢰도 — 비율 — 와는 다르다).
 4. 요약을 다시 요약하지 않는다. 카드는 어휘 id를 세서 만들고, 모든 파생은 L0·L1에서 다시 만든다.
 5. 원형·패싯 값·어휘 id를 즉석에서 만들지 않는다. 후보는 `inbox/` 에 남기고, 채택은 승격 기준과 재도출 절차로만 한다.
 6. `method/codebook.yaml` 을 바꾸면 `python -m atlas gen-schema` 로 스키마를 다시 만든다. 스키마를 손으로 고치지 않는다.
