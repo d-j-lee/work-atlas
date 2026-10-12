@@ -1,6 +1,6 @@
-"""레시피 공통 — 경로, 코드북, JSONL 입출력, 관측 검증.
+"""엔진 공통 — 경로, 코드북, JSONL 입출력, 관측 검증.
 
-도메인·도구에 의존하지 않는 것만 둔다. 수집기·상관처럼 사내 시스템에 묶인 레시피는 사내 인스턴스에서 만든다.
+도메인·소스에 의존하지 않는 것만 둔다. 소스별 코드는 atlas/collect/, 설정은 atlas/config.py.
 모든 텍스트 출력은 UTF-8 · LF 로 고정한다 — Windows 에서도 해시가 파일 바이트와 같아야 한다.
 """
 from __future__ import annotations
@@ -9,7 +9,9 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
@@ -17,7 +19,7 @@ from typing import Iterable, Iterator
 import jsonschema
 import yaml
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 RESERVED = ("unknown", "residual")
 HUMAN_SYSTEMS = ("atlas", "self_report")
 TRACK_ORDER = {"A": 0, "B": 1}
@@ -28,7 +30,8 @@ class Paths:
     """저장소 루트 기준 경로. 테스트·다른 저장소에서 부를 때는 root 를 바꾼다.
 
     작업단위 파일의 흐름: stitched(상관 결과, 주석 없음) → annotated(주석) → current(사후 검증 통과본).
-    채점·유사 사례·카드·사용 스킬은 current 만 읽는다.
+    읽는 쪽(채점·유사 사례·카드·맥락·마이닝·카탈로그)은 모두 `load_units` 한 규칙을 쓴다: current, 없으면 stitched.
+    주석 입력 문서(render)만 stitched 를 직접 읽는다.
     """
 
     root: Path
@@ -67,11 +70,41 @@ class Paths:
 
     @property
     def manifest(self) -> Path:
-        return self.root / "build" / "MANIFEST.json"
+        return self.root / "out" / "MANIFEST.json"
+
+    @property
+    def config(self) -> Path:
+        return self.root / "atlas.toml"
+
+    @property
+    def state(self) -> Path:
+        """수집 증분 상태·훅 중복 방지 기록. 지워도 다시 만들어진다(그 대신 한 번 전수 수집)."""
+        return self.root / "data" / "state"
+
+    @property
+    def model(self) -> Path:
+        """마이닝 산출(주장·색인·카탈로그). WU 단위 근거가 있어 git 밖에 둔다 — 원형 단위 집계만 out/ 로 간다."""
+        return self.root / "data" / "model"
+
+    @property
+    def reports(self) -> Path:
+        return self.root / "data" / "reports"
 
 
 def paths(root: str | Path | None = None) -> Paths:
-    return Paths(Path(root).resolve() if root else REPO)
+    """루트 결정 순서: 인자(--root) → 환경 변수 ATLAS_HOME → 현재 폴더와 그 위에서 method/codebook.yaml 이 있는 곳
+    → 이 패키지가 든 저장소. 현재 폴더가 먼저다 — 인스턴스 폴더에서 실행하면 그 인스턴스를 쓴다."""
+    if root:
+        return Paths(Path(root).resolve())
+    if os.environ.get("ATLAS_HOME"):
+        return Paths(Path(os.environ["ATLAS_HOME"]).resolve())
+    cwd = Path.cwd().resolve()
+    for d in (cwd, *cwd.parents):
+        if (d / "method" / "codebook.yaml").exists():
+            return Paths(d)
+    if (REPO / "method" / "codebook.yaml").exists():
+        return Paths(REPO)
+    raise SystemExit("work-atlas 인스턴스를 찾지 못했다 — 인스턴스 폴더에서 실행하거나 --root · ATLAS_HOME 을 지정한다")
 
 
 # ---------------------------------------------------------------- 코드북
@@ -131,6 +164,17 @@ def read_jsonl(path: Path) -> Iterator[dict]:
                 raise ValueError(f"{path}:{n}: JSON 이 아니다 — {e}") from e
 
 
+def units_path(p: "Paths") -> Path | None:
+    """읽을 작업단위 파일: current(사후 검증 통과본), 없으면 stitched, 둘 다 없으면 None.
+    `atlas stitch` 를 따로 돌리면 옛 current 를 지워 둘이 어긋나지 않게 한다(stitch.main)."""
+    return next((x for x in (p.units, p.stitched) if x.exists()), None)
+
+
+def load_units(p: "Paths") -> list[dict]:
+    path = units_path(p)
+    return list(read_jsonl(path)) if path else []
+
+
 def apply_corrections(observations: list[dict]) -> list[dict]:
     """`<system>.correction` 사건이 가리키는 관측(objects 의 type "obs")을 무효로 하고, 정정 사건 자체도 뺀다.
 
@@ -175,7 +219,15 @@ def write_text(path: Path, text: str) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
-    os.replace(tmp, path)
+    for attempt in range(6):                  # Windows: 다른 프로세스(훅)가 읽는 중이면 잠깐 막힌다
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                os.unlink(tmp)
+                raise
+            time.sleep(0.2)
 
 
 def write_jsonl(path: Path, records: Iterable[dict]) -> None:
@@ -230,6 +282,34 @@ def sha256_text(text: str) -> str:
 def object_ref(obj: dict) -> str:
     """객체 참조의 표준 문자열 — 'issue:ABC-123'. 앵커·오버레이·채점이 같은 형식을 쓴다."""
     return f"{obj['type']}:{obj['id']}"
+
+
+def glob_regex(pattern: str) -> re.Pattern:
+    """경로 glob → 정규식. `*` 는 경로 한 단계, `**/` 는 0단계 이상, 끝의 `**` 는 그 아래 전부."""
+    out, i = "", 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out += "(?:.*/)?"
+            i += 3
+        elif pattern.startswith("**", i):
+            out += ".*"
+            i += 2
+        elif pattern[i] == "*":
+            out += "[^/]*"
+            i += 1
+        elif pattern[i] == "?":
+            out += "[^/]"
+            i += 1
+        else:
+            out += re.escape(pattern[i])
+            i += 1
+    return re.compile(out + r"\Z")
+
+
+def path_filter(patterns: list[str]):
+    """glob 목록에 걸리는 경로면 True 를 돌려주는 함수."""
+    compiled = [glob_regex(p) for p in patterns]
+    return lambda path: any(rx.match(path) for rx in compiled)
 
 
 def is_unknown(value) -> bool:

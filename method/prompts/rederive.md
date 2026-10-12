@@ -1,7 +1,7 @@
 # 원점 재도출 프롬프트 (고정 레시피)
 
 > 사용법: 재도출 실행마다 **새 임시 폴더**를 만들고 표본 WU 파일만 넣은 뒤, 그 폴더에서 밀폐 실행한다.
-> 입력 WU 파일은 `render_wu.py` 의 결정론 문서다(주석·빌드 정보·atlas 사건 없음).
+> 입력 WU 파일은 `atlas render` 의 결정론 문서다(주석·빌드 정보·atlas 사건 없음).
 > 모델에는 아래 `---` 이후 **본문만** 보낸다. 시드 실행이면 `{{SEEDED}}` 에 패싯 시드를 넣고, 아니면 빈 문자열로 바꾼다.
 > 예: `claude --bare -p "$BODY" --output-format json --json-schema "$(cat rederive.schema.json)" --allowedTools "Read,Glob,Grep" --permission-mode dontAsk`
 > 이 프롬프트를 실행마다 바꾸지 않는다. 바꾸면 버전을 올리고 결정기록에 남긴다.

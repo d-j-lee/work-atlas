@@ -3,7 +3,7 @@
 
 코드북이 패싯 값·서열·어휘의 유일한 정본이다. LLM 주석 출력 스키마는 여기서 생성하고 손으로 고치지 않는다.
 
-사용: python3 method/recipes/gen_annotation_schema.py [--check]
+사용: python -m atlas gen-schema [--check] [--root …]
   --check : 생성 결과가 디스크의 파일과 다르면 종료 코드 1 (커밋 전 검사에서 드리프트 감지용)
 
 스키마는 조건부 키워드(if/then, anyOf 등)를 쓰지 않는다. 구조화 출력이 지원하는 키워드 범위가
@@ -21,16 +21,16 @@ from pathlib import Path
 
 import yaml  # PyYAML
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import Codebook  # noqa: E402
+from .common import Codebook, paths, write_text
 
-METHOD_DIR = Path(__file__).resolve().parent.parent
-CODEBOOK = METHOD_DIR / "codebook.yaml"
-OUT = METHOD_DIR / "annotation.schema.json"
+
+def _files(root=None) -> tuple[Path, Path, Path]:
+    r = paths(root).root
+    return r, r / "method" / "codebook.yaml", r / "method" / "annotation.schema.json"
 
 
 def annotated_facets(cb: dict) -> list[dict]:
-    """LLM 이 주석할 패싯 — 판단은 _common.Codebook 한 곳에 둔다(validate.py 와 같은 기준)."""
+    """LLM 이 주석할 패싯 — 판단은 common.Codebook 한 곳에 둔다(atlas/validate.py 와 같은 기준)."""
     return Codebook(cb).annotated_facets()
 
 
@@ -86,7 +86,7 @@ def build(cb: dict) -> dict:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": (
-            f"GENERATED from codebook.yaml version {cb['version']} (track {cb.get('track', 'B')}) by method/recipes/gen_annotation_schema.py "
+            f"GENERATED from codebook.yaml version {cb['version']} (track {cb.get('track', 'B')}) by atlas/schema_gen.py (python -m atlas gen-schema) "
             "— 손으로 고치지 않는다. 코드북을 고치고 다시 생성한다."
         ),
         "title": "WorkUnitAnnotation",
@@ -156,21 +156,28 @@ def render(cb: dict) -> str:
     return json.dumps(build(cb), ensure_ascii=False, indent=2) + "\n"
 
 
-def check() -> bool:
+def check(root=None) -> bool:
     """디스크의 스키마가 코드북에서 생성한 결과와 같은지. 다른 검사 스크립트가 재사용한다."""
-    cb = yaml.safe_load(CODEBOOK.read_text(encoding="utf-8"))
-    return OUT.exists() and OUT.read_text(encoding="utf-8") == render(cb)
+    _, codebook, out = _files(root)
+    cb = yaml.safe_load(codebook.read_text(encoding="utf-8"))
+    return out.exists() and out.read_text(encoding="utf-8") == render(cb)
 
 
-def main() -> int:
-    if "--check" in sys.argv:
-        if not check():
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    root_arg = argv[argv.index("--root") + 1] if "--root" in argv else None
+    if "-h" in argv or "--help" in argv:
+        print(__doc__)
+        return 0
+    root, codebook, out = _files(root_arg)
+    if "--check" in argv:
+        if not check(root_arg):
             print("annotation.schema.json 이 codebook.yaml 과 어긋난다. 생성기를 다시 돌려라.", file=sys.stderr)
             return 1
         return 0
-    cb = yaml.safe_load(CODEBOOK.read_text(encoding="utf-8"))
-    OUT.write_text(render(cb), encoding="utf-8")
-    print(f"wrote {OUT.relative_to(METHOD_DIR.parent)} (codebook v{cb['version']})")
+    cb = yaml.safe_load(codebook.read_text(encoding="utf-8"))
+    write_text(out, render(cb))
+    print(f"wrote {out.relative_to(root).as_posix()} (codebook v{cb['version']})")
     return 0
 
 

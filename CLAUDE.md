@@ -1,7 +1,8 @@
 # work-atlas — AI 운영 규칙
 
 이 저장소는 현업의 업무 처리 지식(문제·처리·결과)을 관측해 다음 일의 트리아지·실행·사후 대응에 다시 쓰는 체계다.
-왜 이렇게 생겼는지는 `METHODOLOGY.md`, 시작 절차는 `BOOTSTRAP.md`, 수치의 정본은 `method/policy.md`, 데이터 계약은 `method/schema.md`.
+왜 이렇게 생겼는지는 `METHODOLOGY.md`, 엔진 구조는 `ARCHITECTURE.md`, 효용 실측은 `EVALUATION.md`, 시작 절차는 `BOOTSTRAP.md`.
+사람이 정하는 수치의 정본은 `method/policy.md`, 엔진이 읽는 설정은 `atlas.toml`, 데이터 계약은 `method/schema.md`.
 
 > 루트에 `.template` 이 있으면 공개 템플릿 저장소다. 거기서는 일반화된 방법(`METHODOLOGY.md`·`method/`)만 다듬고, 사내 업무에서 유래한 내용(원형·어휘·예시·골든셋·결정기록·운영 데이터)은 넣지 않는다 — 무결성 검사가 거부한다.
 
@@ -9,23 +10,26 @@
 
 | 경로 | 성격 | 누가 쓰나 |
 |---|---|---|
-| `data/` | 정본 L0 관측 + WU·주석 캐시. **git 밖** | 수집·빌드 레시피만. 관측은 고치거나 지우지 않는다 — 정정은 `correction` 사건 추가 |
+| `data/` | 정본 L0 관측 + 캐시(WU·주석·마이닝 모델·업무 지도·수확 리포트). **git 밖** | 엔진 명령만(`atlas collect`·`ingest`·`build`·`record`). 관측은 고치거나 지우지 않는다 — 정정은 `correction` 사건 추가 |
+| `atlas/` · `tests/` | 엔진 코드와 테스트 | 사람과 합의한 뒤 수정. 테스트를 통과시킨다 |
+| `atlas.toml` | 인스턴스 설정(소스·키 패턴·마이닝 값). 비밀값 없음 — 자격 증명은 환경 변수 이름만 | 사람과 합의한 뒤 수정. 바꾼 이유는 `method/DECISIONS.md` |
 | `method/` | 정본 방법 (코드북·스키마·정책·레시피·골든셋·결정기록) | 사람과 합의한 뒤 수정. `method/policy.md` §10 절차를 따른다 |
 | `overlays/` | 정본 사람 판단 | 사람이 지시할 때만. 근거·만료일 필수 |
-| `build/` | 생성물 (모델·카드·MANIFEST, 원형 단위 집계) | 빌드 레시피만. **손으로 고치지 않는다** |
+| `out/` | 생성물 (모델·카드·MANIFEST, 원형 단위 집계) | 빌드 레시피만. **손으로 고치지 않는다** |
 | `inbox/` | 제안 수신함 | 어느 세션이든 파일 하나 추가 가능 |
 | `reports/` | 월간 집계 리포트 (원형 단위). 주간 수확 리포트는 `data/reports/` (git 밖) | 레시피만. 정본으로 인용하지 않는다 |
 
 ## 규칙
 
-1. **결과가 이상하면 `build/` 를 고치지 않는다.** 원인을 수집기·`method/`·`overlays/` 에서 찾아 고치고 다시 빌드한다.
+1. **결과가 이상하면 `out/` 를 고치지 않는다.** 원인을 수집기·`method/`·`overlays/` 에서 찾아 고치고 다시 빌드한다.
 2. L0에 해석(요약·분류·추정)을 넣지 않는다. 결정론적으로 뽑은 값만 들어간다. 예외는 `atlas`·`self_report` 사건의 `payload` — 사람의 입력과 그 시점의 예측을 사실로 기록한 것이다.
 3. LLM이 만든 값에는 근거 `obs_id` 를 단다. 근거가 없으면 `unknown` 이다. 그럴듯한 값으로 채우지 않는다. 신뢰도는 숫자가 아니라 `high·medium·low` 서열이고 정의는 `codebook.yaml` 에 있다.
 4. 요약을 다시 요약하지 않는다. 카드는 어휘 id를 세서 만들고, 모든 파생은 L0·L1에서 다시 만든다.
 5. 원형·패싯 값·어휘 id를 즉석에서 만들지 않는다. 후보는 `inbox/` 에 남기고, 채택은 승격 기준과 재도출 절차로만 한다.
-6. `method/codebook.yaml` 을 바꾸면 `python3 method/recipes/gen_annotation_schema.py` 로 스키마를 다시 만든다. 스키마를 손으로 고치지 않는다.
-   레시피·스키마를 바꾸면 `python3 -m unittest discover -s tests` 를 통과시킨다. 테스트를 고쳐 통과시키지 말고 계약을 지킨다.
-7. 커밋 전 검사를 켠다: `git config core.hooksPath .githooks`. 검사가 실패하면 우회하지 말고 원인을 고친다.
+6. `method/codebook.yaml` 을 바꾸면 `python -m atlas gen-schema` 로 스키마를 다시 만든다. 스키마를 손으로 고치지 않는다.
+   엔진·스키마를 바꾸면 `python -m unittest discover -s tests` 를 통과시킨다. 테스트를 고쳐 통과시키지 말고 계약을 지킨다.
+   효용을 주장하는 변경(마이닝 규칙·순위·문턱)은 `python -m atlas eval` 결과와 함께만 채택한다.
+7. 커밋 전 검사를 켠다: `git config core.hooksPath .githooks`. 검사(`python -m atlas check`)가 실패하면 우회하지 말고 원인을 고친다.
 8. 사내 데이터를 이 저장소와 사내 시스템 밖으로 보내지 않는다. 사람은 역할로만 기록하고, 결함 귀속은 원형 단위 집계로만 낸다.
 9. 무인 실행에서는 읽기와 이 저장소 안의 생성만 한다. 원천 시스템(트래커·메신저·메일 등)에 쓰지 않는다.
 10. 표본과 전수를 구분한다. 잘린 수집은 `partial: true`, 그 위의 통계는 리포트에 밝힌다.
@@ -33,6 +37,7 @@
 
 ## 대화 세션에서 이 저장소를 쓸 때
 
-- 트리아지·카드 조회는 읽기만 한다. 예측·판정·피드백·자기 보고는 `method/recipes/record_event.py` 로만 남긴다 — 대화 세션이 L0에 쓸 수 있는 유일한 경로다.
+- 맥락·카드·카탈로그 조회(`atlas context`·`atlas catalog`·`atlas similar`)는 관측·방법을 바꾸지 않는다(`catalog` 는 생성 캐시만 갱신한다). 예측·판정·피드백·자기 보고는 `atlas record` 로만 남긴다 — 대화 세션이 L0에 쓸 수 있는 유일한 경로다.
+- 맥락의 수치는 건수와 함께 말하고, 연관을 인과로 말하지 않는다. 데이터 상태 경고(키 커버리지·고아·옛 형식)가 있으면 먼저 밝힌다.
 - 다른 저장소에서 작업할 때는 이 파일이 로드되지 않는다. 그때의 규칙은 사용 스킬 `method/skill/atlas/SKILL.md` 가 담는다.
 - 고칠 것이 보이면 고치지 말고 `inbox/YYYYMMDD-HHMM-<주제>.md` 로 남긴다. 수확 단계가 주간 질문으로 올린다.

@@ -5,7 +5,7 @@
 #   - examples 에는 근거 WU의 앵커 객체 참조(예: "issue:ABC-123")만 넣는다. 지어낸 예시를 넣지 않는다.
 #   - 값 추가·삭제·개명은 policy.md 의 변경 절차(골든셋 평가 + DECISIONS.md 한 줄)로만 한다.
 #   - id 는 공개 API다(오버레이·카드·스키마가 참조). 개명 대신 deprecated 표시 후 신규 id.
-#   - 이 파일을 바꾸면 recipes/gen_annotation_schema.py 로 annotation.schema.json 을 다시 만든다.
+#   - 이 파일을 바꾸면 python -m atlas gen-schema 로 annotation.schema.json 을 다시 만든다.
 
 version: 0
 status: seed            # seed → v1(3단계 도출 후) → ...
@@ -21,7 +21,7 @@ reserved_values:        # 모든 패싯에 자동으로 붙는다
 
 confidence_scale:       # LLM 숫자 대신 근거로 정의된 서열 (METHODOLOGY.md §5.5)
   - id: high
-    short: 서로 다른 직접 근거 관측 2개 이상 (validate.py R3 이 집행)
+    short: 서로 다른 직접 근거 관측 2개 이상 (atlas validate 의 R3 이 집행)
   - id: medium
     short: 직접 근거 관측 1개
   - id: low

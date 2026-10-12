@@ -12,7 +12,7 @@
 트리아지는 앵커별 마지막 것, 판정도 앵커별 마지막 것을 쓴다. 앵커는 WU 의 anchors 와
 구성 관측의 objects 로 WU 에 연결한다(대화 스레드에서 트리아지한 일이 나중에 이슈 WU 로 묶여도 찾는다).
 
-사용: python3 score.py [--units data/units/current.jsonl] [--min-judged 20] [--json]
+사용: python -m atlas score [--units data/units/current.jsonl] [--min-judged 20] [--json]
 """
 from __future__ import annotations
 
@@ -21,8 +21,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import object_ref, parse_ts, paths, read_jsonl, read_observations  # noqa: E402
+from .common import load_units, object_ref, parse_ts, paths, read_jsonl, read_observations
 
 
 MIN_BIN = 10
@@ -142,15 +141,14 @@ def render_text(r: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="atlas score", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root")
     ap.add_argument("--units")
     ap.add_argument("--min-judged", type=int, default=20, help="판정에 필요한 사람 판정 수 (policy.md §7)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     p = paths(args.root)
-    units_path = Path(args.units) if args.units else p.units
-    units = list(read_jsonl(units_path)) if units_path.exists() else []
+    units = list(read_jsonl(Path(args.units))) if args.units else load_units(p)
     report = score(read_observations(p.observations), units, args.min_judged)
     print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else render_text(report))
     return 0

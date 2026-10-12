@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77"]   # license = "MIT" (PEP 639 표기)는 77 부터
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "work-atlas"
+dynamic = ["version"]
+description = "현업 업무 처리 지식(문제·처리·결과)을 관측·마이닝해 다음 일의 트리아지·실행·사후 대응에 다시 쓰는 도구"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6.0", "jsonschema>=4.18"]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+
+[project.scripts]
+atlas = "atlas.__main__:main"
+
+[tool.setuptools]
+packages = ["atlas", "atlas.collect", "atlas.mine"]
+
+[tool.setuptools.dynamic]
+version = { attr = "atlas.__version__" }

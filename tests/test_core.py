@@ -1,4 +1,4 @@
-"""기준 레시피 단위 테스트 — 합성 데이터만 쓴다(모든 id·주소는 가상).
+"""엔진 핵심(관측 계약·기록·사후 검증·입력 문서·채점·유사 사례) 단위 테스트 — 합성 데이터만 쓴다(모든 id·주소는 가상).
 
 실행: python -m unittest discover -s tests -v
 템플릿 코드북은 원형·어휘가 비어 있으므로, 테스트는 임시 루트에 가상 원형·어휘를 넣은 코드북 사본을 만든다.
@@ -16,15 +16,13 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "method" / "recipes"))
+sys.path.insert(0, str(REPO))
 
-import gen_annotation_schema  # noqa: E402
-import record_event  # noqa: E402
-import render_wu  # noqa: E402
-import score  # noqa: E402
-import similar  # noqa: E402
-import validate  # noqa: E402
-from _common import (  # noqa: E402
+from atlas import record as record_event  # noqa: E402
+from atlas import render as render_wu  # noqa: E402
+from atlas import schema_gen as gen_annotation_schema  # noqa: E402
+from atlas import score, similar, validate  # noqa: E402
+from atlas.common import (  # noqa: E402
     Codebook, append_jsonl, check_observation, observation_validator, paths, read_jsonl, read_observations,
     sha256_text,
 )

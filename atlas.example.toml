@@ -1,0 +1,88 @@
+# work-atlas 인스턴스 설정 예시 — 사내 저장소에서 atlas.toml 로 복사해 채운다.
+# 비밀값은 여기에 넣지 않는다. 자격 증명은 환경 변수 "이름"만 적는다.
+# 수치의 이유와 사람의 결정은 method/policy.md, 여기는 기계가 읽는 값이다.
+
+[identity]
+# 나를 가리키는 식별자 — git 이메일, Jira 사용자 이름·이메일·accountId. 사건의 행위자를 self 로 표시하는 데만 쓴다.
+# 그 밖의 사람은 역할만 남는다(unknown·bot). 식별자 자체는 L0 에 들어가지 않는다.
+self = ["me@company.example", "me"]
+# 식별자를 공백으로 이은 문자열(이름이 맨 앞)에 건다. jenkins·hudson 은 사람 성과 겹쳐 이름 맨 앞·메일 주소만 본다
+bot_patterns = ["\\[bot\\]", "\\bbot\\b", "dependabot", "renovate", "^(jenkins|hudson)\\b", "\\b(jenkins|hudson)@", "github-actions", "gitlab-ci"]
+
+[keys]
+# 커밋 메시지·브랜치·프롬프트에서 이슈 키를 결정론적으로 뽑는 정규식.
+# \b 를 쓰지 않는다 — 한글은 단어 글자라 "ABC-123에서" 가 \b 로는 안 잡힌다.
+issue = "(?<![A-Za-z0-9])[A-Z][A-Z0-9]{1,9}-[0-9]{1,6}(?![0-9])"
+projects = []                   # 알려진 프로젝트 키만 인정하려면 채운다 (예: ["PROJ", "OPS"]) — 가장 정확하다
+exclude_prefixes = ["UTF", "SHA", "ISO", "RFC", "HTTP", "TLS", "SSL", "CVE", "JDK", "JSR", "PEP", "AES", "MD", "IPV", "GCC", "ARM", "X86", "CP", "EUC", "KSC", "RS", "ES"]
+# 결함 수정 커밋으로 볼 메시지 패턴(대소문자 무시). 이슈 유형이 Bug 이면 패턴과 무관하게 결함 수정이다.
+# 'patch' 는 넣지 않는다 — "Applying X's patch from …" 처럼 결함과 무관한 쓰임이 많다
+fix = "\\b(fix(e[sd])?|bug(fix)?|hotfix)\\b|버그|결함|오류|장애|핫픽스"
+# fix 에 걸려도 결함 수정이 아닌 것(제목 문단 기준) — 문서·서식·오타 정리. 사후 귀속(SZZ 근사)의 정밀도를 지킨다.
+fix_exclude = "(?i)javadoc|\\btypos?\\b|\\bformatting\\b|checkstyle|spotbugs|\\bdocs?\\b|\\bdocumentation\\b|오타|주석 수정|문서|포맷"
+
+[[sources.git]]
+name = "server"                 # 이 저장소를 부를 이름 (관측 id 에 들어간다 — 바꾸지 않는다)
+path = "/path/to/server-repo"
+# ref = "origin/main"           # 비우면 원격 기본 브랜치(origin/HEAD), 없으면 HEAD. 작업 중인 브랜치를 모으지 않게
+since = "2025-10-01"            # 첫 수집 시작일. 이후는 증분
+# max_paths = 500               # 커밋 하나에 남길 경로 상한. 넘으면 partial
+# max_branch_commits = 200      # 머지 하나가 들여온 커밋 목록 상한
+# owner = "my-org"              # PR 이 모이는 저장소의 소유자. 비우면 upstream·ref 의 원격·origin 순으로 URL 에서 읽는다 — GitHub 릴리스 PR(from my-org/develop)을 동기화로 가리는 데만 쓰고 저장하지 않는다
+# keep_branch_names = false     # 브랜치 이름을 그대로 남길지. 기본은 해시 — 이름에 계정·별칭이 들어가는 관례가 흔하다
+# excerpt = true                # 커밋 메시지 발췌를 남길지 (트레일러의 사람 이름은 빼고, 비밀값은 가린다)
+# excerpt_chars = 1000
+
+[[sources.jira]]
+name = "jira"
+flavor = "datacenter"           # datacenter | cloud
+base_url = "https://jira.company.example"
+jql = "project = PROJ"          # cloud 는 범위가 있어야 한다 (예: project = PROJ AND updated >= -365d)
+auth_env = "ATLAS_JIRA_AUTH"    # datacenter: 개인 액세스 토큰 · cloud: "email:api_token"
+done_statuses = ["Resolved", "Closed", "Done", "완료", "해결됨"]
+# comments = true               # 댓글 사건을 모을지 (본문은 발췌 캐시로만)
+# page_size = 100
+# excerpt = true                # 요약·설명·댓글 발췌를 남길지 — 회사 정책이 본문 처리를 막으면 false
+# excerpt_chars = 1000
+
+[[sources.claude_code]]
+name = "claude-code"
+projects_dir = "~/.claude/projects"
+include = ["server-repo"]       # 프로젝트 폴더 이름에 이 문자열이 들어간 것만. 비우면 전부
+# min_idle_minutes = 30         # 마지막 수정이 이보다 최근인 세션(지금 쓰이는 중)은 다음 수집으로 미룬다
+# keep_branch_names = false
+# excerpt = true                # 첫 프롬프트 발췌를 남길지
+# excerpt_chars = 300
+# Claude Code 는 대화 기록을 기본 30일 뒤 지운다(cleanupPeriodDays). 수집은 그보다 자주 돌린다.
+
+[stitch]
+max_issue_keys = 3              # 이보다 많은 이슈 키를 단 커밋은 조인하지 않는다 (릴리스·일괄 커밋)
+session_link_hours = 12         # AI 세션이 끝나고 이 시간 안의 커밋을 경로 겹침으로 잇는다 (확률 연결)
+session_wu_min_prompts = 3      # 어디에도 안 이어진 세션이 독립 작업단위가 되는 최소 프롬프트 수 (편집이 있으면 1)
+bug_types = ["Bug", "Defect", "버그", "결함", "장애"]
+abandoned_resolutions = ["Won't Fix", "Won't Do", "Duplicate", "Invalid", "Incomplete", "Cannot Reproduce", "Not A Problem", "Not A Bug", "Abandoned", "Rejected", "취소", "반려", "중복"]
+
+[policy]
+open_window_days = 30           # 종료 뒤 사후 사건을 계속 귀속하는 기간 — 지나면 확정 WU
+min_judged = 20                 # 판정에 필요한 사람 판정 수
+# 카탈로그 경고 문턱 — 의미와 결정 이유는 method/policy.md §7
+orphan_ratio_max = 0.2          # 고아 관측 비율이 이보다 크면 경고
+key_coverage_min = 0.5          # 커밋 이슈 키 커버리지가 이보다 작으면 습관 제안
+stale_days = 8                  # 마지막 수집이 이보다 오래되면 경고 (주간 수확 기준)
+transcript_stale_days = 20      # Claude Code 최신 세션이 이보다 오래되면 경고 (원천은 30일 뒤 삭제)
+
+[mining]
+max_files_per_commit = 30       # 이보다 큰 커밋은 동반 변경에서 뺀다 (Zimmermann et al. 2004)
+min_support = 3                 # 주장으로 올릴 최소 동시 출현 수
+min_confidence = 0.3            # 동반 변경 규칙의 최소 신뢰도
+half_life_days = 180            # 핫스팟 최근성 가중의 반감기 (Graves et al. 2000 의 시간 감쇠)
+hotspot_rank = "fixes"          # 핫스팟 순위 기준: fixes · fix_damp · changes · change_damp · churn — atlas eval 로 내 데이터에서 골라라
+history_generations = 6         # 세대 비교를 위해 남겨 둘 이전 세대 수
+# 거의 모든 변경에 따라 바뀌는 장부 파일 — 동반 변경·핫스팟·사후 귀속(SZZ 근사)에서 뺀다. 넣어 두면 그것만 추천되고 귀속이 오염된다.
+ignore_paths = ["**/CHANGELOG*", "**/CHANGES*", "**/changes.xml", "**/RELEASE-NOTES*", "**/NEWS*", "**/HISTORY*", "**/*.lock", "**/package-lock.json", "**/go.sum", "**/pom.xml", "**/build.gradle", "**/build.gradle.kts", "**/package.json", "**/version.txt", ".github/**", ".gitlab-ci.yml", "**/Jenkinsfile"]
+# 테스트 파일 — 사후 귀속에서 유발자로 보지 않고, 실천 특징 '테스트도 바꿨나'에 쓴다
+test_paths = ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*Test.*", "**/*Tests.*", "**/*_test.*", "**/test_*", "**/*.spec.*", "**/*.test.*"]
+
+[context]
+max_lines = 40                  # Claude 맥락 출력의 최대 줄 수 — 맥락은 짧을수록 쓰인다
+hook_min_confidence = 0.5       # 편집 순간 자동으로 넣는 동반 변경 힌트의 최소 신뢰도

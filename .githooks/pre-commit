@@ -1,3 +1,5 @@
 #!/bin/sh
 # 활성화: git config core.hooksPath .githooks
-exec python3 method/recipes/check_integrity.py
+# python3 가 없는 환경(Windows 의 Git Bash 등)에서는 python 으로
+if command -v python3 >/dev/null 2>&1; then exec python3 -m atlas check; fi
+exec python -m atlas check

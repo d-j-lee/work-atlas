@@ -3,29 +3,31 @@
 
 검사 항목 (하나라도 어기면 종료 코드 1):
   1. annotation.schema.json 이 codebook.yaml 에서 생성한 결과와 같은가 (손 편집·생성 누락 탐지)
-  2. build/ 의 파일이 build/MANIFEST.json 의 해시와 같은가 (생성물 손 편집 탐지)
+  2. out/ 의 파일이 out/MANIFEST.json 의 해시와 같은가 (생성물 손 편집 탐지)
   3. overlays/*.yaml 항목에 target·op·reason·expires 가 있는가 (만료된 항목은 경고만)
   4. data/ 가 git 에 추적되고 있지 않은가 (관측·WU 단위 데이터는 git 밖 — 보존 정책 집행을 위해)
   5. 루트에 .template 이 있으면(공개 템플릿 저장소) 사내 인스턴스 유래 내용이 없는가
      — 추적 파일이 허용 목록 안에 있는가(허용 목록 방식: 새 파일은 의식적으로 추가해야 한다),
        코드북의 원형·어휘·예시·도출 값이 비어 있는가, policy.md 가 빈칸 상태인가
 
-사용: python3 method/recipes/check_integrity.py      (.githooks/pre-commit 이 호출)
+사용: python -m atlas check [--root …]      (.githooks/pre-commit 과 CI 가 호출)
 """
 from __future__ import annotations
 
 import datetime as dt
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import gen_annotation_schema  # noqa: E402
+from . import schema_gen as gen_annotation_schema
+from .common import REPO, glob_regex, paths
+
+ROOT = REPO          # main() 이 --root · ATLAS_HOME · 현재 폴더로 다시 정한다
 
 errors: list[str] = []
 warnings: list[str] = []
@@ -36,19 +38,19 @@ def sha256(path: Path) -> str:
 
 
 def check_schema() -> None:
-    if not gen_annotation_schema.check():
-        errors.append("annotation.schema.json 이 codebook.yaml 과 어긋난다 → gen_annotation_schema.py 를 다시 돌려라")
+    if not gen_annotation_schema.check(ROOT):
+        errors.append("annotation.schema.json 이 codebook.yaml 과 어긋난다 → python -m atlas gen-schema 를 다시 돌려라")
 
 
 def check_build() -> None:
-    build = ROOT / "build"
+    build = ROOT / "out"
     if not build.exists():
         return
     manifest_path = build / "MANIFEST.json"
     files = [p for p in build.rglob("*") if p.is_file() and p != manifest_path]
     if not manifest_path.exists():
         if files:
-            errors.append("build/ 에 파일이 있는데 MANIFEST.json 이 없다 → 빌드 레시피로 다시 만들어라")
+            errors.append("out/ 에 파일이 있는데 MANIFEST.json 이 없다 → 빌드 레시피로 다시 만들어라")
         return
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     listed = manifest.get("files", {})
@@ -57,7 +59,7 @@ def check_build() -> None:
         if not p.exists():
             errors.append(f"MANIFEST 에 있는 {rel} 이 없다")
         elif sha256(p) != digest:
-            errors.append(f"{rel} 이 MANIFEST 해시와 다르다 → 손 편집으로 보인다. build/ 는 레시피만 쓴다")
+            errors.append(f"{rel} 이 MANIFEST 해시와 다르다 → 손 편집으로 보인다. out/ 는 레시피만 쓴다")
     for p in files:
         rel = p.relative_to(ROOT).as_posix()
         if rel not in listed:
@@ -90,18 +92,47 @@ def check_data_untracked() -> None:
         errors.append("data/ 가 git 에 추적되고 있다 → git rm --cached -r data 후 .gitignore 확인")
 
 
-# 공개 템플릿에 존재해도 되는 추적 파일. 템플릿에 일반화된 파일을 새로 넣을 때만 여기에 추가한다.
-TEMPLATE_ALLOWED = {
-    ".claude/settings.json", ".gitattributes", ".githooks/pre-commit", ".github/workflows/integrity.yml",
-    ".gitignore", ".template", "BOOTSTRAP.md", "CHANGELOG.md", "CLAUDE.md", "LICENSE", "METHODOLOGY.md",
-    "README.md", "requirements.txt",
-    "method/annotation.schema.json", "method/codebook.yaml", "method/observation.schema.json",
-    "method/policy.md", "method/schema.md", "method/skill/atlas/SKILL.md",
-    "method/recipes/_common.py", "method/recipes/check_integrity.py", "method/recipes/gen_annotation_schema.py",
-    "method/recipes/record_event.py", "method/recipes/render_wu.py", "method/recipes/rederive_prompt.md",
-    "method/recipes/score.py", "method/recipes/similar.py", "method/recipes/validate.py",
-    "tests/test_recipes.py",
-}
+# 공개 템플릿에 존재해도 되는 추적 파일의 패턴. `*` 는 경로 한 단계, `**` 는 여러 단계.
+# 일반화된 파일을 새 위치에 넣을 때만 여기에 추가한다 — 사내 파일(atlas.toml, method/sources.yaml 등)은 일부러 없다.
+TEMPLATE_ALLOWED = [
+    ".claude/settings.json", ".gitattributes", ".githooks/pre-commit", ".github/workflows/*.yml",
+    ".gitignore", ".template", "LICENSE", "requirements.txt", "pyproject.toml", "atlas.example.toml",
+    "README.md", "METHODOLOGY.md", "ARCHITECTURE.md", "BOOTSTRAP.md", "CLAUDE.md", "CHANGELOG.md", "EVALUATION.md",
+    "method/annotation.schema.json", "method/observation.schema.json", "method/codebook.yaml",
+    "method/policy.md", "method/schema.md", "method/prompts/*.md", "method/skill/atlas/SKILL.md",
+    "atlas/*.py", "atlas/**/*.py", "tests/*.py",
+]
+
+
+_ALLOWED = [glob_regex(p) for p in TEMPLATE_ALLOWED]
+
+
+def template_allows(rel: str) -> bool:
+    return any(rx.match(rel) for rx in _ALLOWED)
+
+
+def check_example_config(leak: str) -> None:
+    """atlas.example.toml 은 허용 목록 파일이지만 내용에 사내 값(주소·식별자·프로젝트 키)이 들어갈 수 있다 — 자리표시자만 허용한다."""
+    import tomllib
+    path = ROOT / "atlas.example.toml"
+    if not path.exists():
+        return
+    cfg = tomllib.loads(path.read_text(encoding="utf-8"))
+    bad = []
+    for entry in cfg.get("identity", {}).get("self", []):
+        if entry not in ("me",) and not str(entry).endswith(".example"):
+            bad.append(f"identity.self={entry}")
+    for src in cfg.get("sources", {}).get("jira", []):
+        host = re.sub(r"^https?://", "", str(src.get("base_url", ""))).split("/")[0]
+        if host and not host.endswith(".example"):
+            bad.append(f"jira.base_url={host}")
+    for src in cfg.get("sources", {}).get("git", []):
+        if not str(src.get("path", "")).startswith("/path/to/"):
+            bad.append(f"git.path={src.get('path')}")
+    if cfg.get("keys", {}).get("projects"):
+        bad.append("keys.projects 가 채워져 있다")
+    if bad:
+        errors.append(f"atlas.example.toml 에 자리표시자가 아닌 값: {bad}. {leak}")
 
 
 def check_template() -> None:
@@ -121,6 +152,7 @@ def check_template() -> None:
         for value in facet.get("values", []):
             if value.get("examples") or value.get("boundary"):
                 errors.append(f"codebook {facet['id']}.{value['id']} 에 예시·경계 사례가 있다. {leak}")
+    check_example_config(leak)
     policy = (ROOT / "method" / "policy.md").read_text(encoding="utf-8")
     if "policy_version: 0" not in policy or "______" not in policy:
         errors.append(f"policy.md 가 빈칸(______)·policy_version 0 상태가 아니다 — 사내 값이 채워진 것으로 보인다. {leak}")
@@ -129,11 +161,19 @@ def check_template() -> None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         warnings.append("git 을 쓸 수 없어 템플릿 허용 목록 검사를 건너뛴다")
         return
-    for rel in sorted(set(tracked) - TEMPLATE_ALLOWED):
-        errors.append(f"{rel} 는 템플릿 허용 목록에 없다. 일반화된 파일이면 check_integrity.py 의 TEMPLATE_ALLOWED 에 추가하고, 아니면 빼라")
+    for rel in sorted(r for r in set(tracked) if not template_allows(r)):
+        errors.append(f"{rel} 는 템플릿 허용 목록에 없다. 일반화된 파일이면 atlas/check.py 의 TEMPLATE_ALLOWED 에 추가하고, 아니면 빼라")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    global ROOT
+    argv = sys.argv[1:] if argv is None else argv
+    if "-h" in argv or "--help" in argv:
+        print(__doc__)
+        return 0
+    ROOT = paths(argv[argv.index("--root") + 1] if "--root" in argv else None).root
+    errors.clear()
+    warnings.clear()
     check_template()
     check_schema()
     check_build()

@@ -9,7 +9,7 @@
 LLM 을 쓰지 않으므로 같은 입력에는 늘 같은 순서가 나온다. 영역 단서는 트랙 B 에서 domain 패싯이 켜지면 쓰인다.
 --archetype 은 코드북의 활성 id(또는 unknown·residual)여야 한다. 아니면 종료 코드 2.
 
-사용: python3 similar.py --archetype <id> [--domain d ...] [--path p ...] [--error e ...] [-k 3] [--json]
+사용: python -m atlas similar --archetype <id> [--domain d ...] [--path p ...] [--error e ...] [-k 3] [--json]
 결과의 앵커는 data/ 에서 읽은 것이다. 카드·리포트처럼 git 에 남는 곳에 붙여 넣지 않는다.
 """
 from __future__ import annotations
@@ -19,8 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import RESERVED, Codebook, parse_ts, paths, read_jsonl, read_observations  # noqa: E402
+from .common import RESERVED, Codebook, load_units, parse_ts, paths, read_jsonl, read_observations
 
 
 def features(unit: dict, obs_by_id: dict[str, dict]) -> dict[str, set[str]]:
@@ -61,7 +60,7 @@ def rank(query: dict, units: list[dict], obs_by_id: dict[str, dict], k: int = 3)
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="atlas similar", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root")
     ap.add_argument("--units")
     ap.add_argument("--archetype")
@@ -76,8 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.archetype and args.archetype not in allowed:
         print(f"[거부] 원형 '{args.archetype}' 는 코드북에 없는 id 다. 허용: {sorted(allowed)}", file=sys.stderr)
         return 2
-    units_path = Path(args.units) if args.units else p.units
-    units = list(read_jsonl(units_path)) if units_path.exists() else []
+    units = list(read_jsonl(Path(args.units))) if args.units else load_units(p)
     obs_by_id = {o["obs_id"]: o for o in read_observations(p.observations)}
     query = {"archetype": args.archetype, "domain": args.domain, "path": args.path, "error": args.error}
     result = rank(query, units, obs_by_id, args.k)

@@ -1,5 +1,6 @@
 # 로컬 커밋 전 훅(.githooks/pre-commit)은 켜야 동작한다.
-# 같은 검사와 레시피 테스트를 푸시·PR마다 서버에서도 돌려, 규칙 위반이 조용히 들어오지 않게 한다.
+# 같은 검사와 엔진 테스트를 푸시·PR마다 서버에서도 돌려, 규칙 위반이 조용히 들어오지 않게 한다.
+# 파이썬은 지원 하한(3.11)과 최신(3.13) 두 가지. 선택 의존성(MCP)은 최신에서만 설치해 그 경로도 시험한다.
 name: integrity
 
 on:
@@ -13,13 +14,21 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - name: 무결성 검사 (스키마 드리프트 · MANIFEST · 오버레이 · data 비추적)
-        run: python method/recipes/check_integrity.py
-      - name: 기준 레시피 단위 테스트 (관측 계약 · 기록 · 사후 검증 · 입력 문서 · 채점 · 유사 사례)
+          python-version: ${{ matrix.python-version }}
+      - name: 엔진 설치 (pyproject)
+        run: pip install -e .
+      - name: 선택 의존성 (MCP)
+        if: matrix.python-version == '3.13'
+        run: pip install "mcp>=1.2"
+      - name: 무결성 검사 (스키마 드리프트 · MANIFEST · 오버레이 · data 비추적 · 템플릿 유출)
+        run: atlas check
+      - name: 엔진 테스트 (계약 · 수집 · 상관 · 마이닝 · 소비 · 평가)
         run: python -m unittest discover -s tests -v

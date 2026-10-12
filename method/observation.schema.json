@@ -21,7 +21,7 @@
         "instance": { "type": "string" },
         "collector_kind": {
           "enum": ["api", "cli", "mcp_sdk", "llm_mediated", "human"],
-          "description": "human 은 사람이 record_event.py 로 남긴 사건(atlas·self_report). llm_mediated 는 결정론 보장 밖"
+          "description": "human 은 사람이 atlas record 로 남긴 사건(atlas·self_report). llm_mediated 는 결정론 보장 밖"
         }
       }
     },

@@ -6,10 +6,10 @@
   self-report  기록 없이 한 일 한 줄       → self_report.untracked_work
 
 예:
-  python3 record_event.py triage --anchor issue:ABC-130 --archetype ops-data-fix --conf medium \\
+  python -m atlas record triage --anchor issue:ABC-130 --archetype ops-data-fix --conf medium \\
           --scale small --pitfall missing-rollback-script --move snapshot-repro
-  python3 record_event.py feedback --anchor issue:ABC-130 --archetype-ok yes --verdict helpful
-  python3 record_event.py self-report --text "운영 요청으로 로그 조회 30분"
+  python -m atlas record feedback --anchor issue:ABC-130 --archetype-ok yes --verdict helpful
+  python -m atlas record self-report --text "운영 요청으로 로그 조회 30분"
 
 위 예의 id 는 설명용이다 — 실제로는 코드북에 있는 활성 id 를 쓴다(원형·어휘는 residual 허용).
 앵커는 링크가 아니라 '<type>:<id>' 다 (예: 이슈 링크 …/browse/ABC-130 → issue:ABC-130).
@@ -25,8 +25,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import (  # noqa: E402
+from .common import (
     RESERVED, Codebook, Paths, append_jsonl, check_observation, dumps, now_iso,
     object_ref, observation_validator, paths, read_observations, sha256_text,
 )
@@ -130,15 +129,20 @@ def record(event: dict, p: Paths, cb: Codebook) -> Path:
 
 
 def current_generation(p: Paths) -> str | None:
-    try:
-        return json.loads(p.manifest.read_text(encoding="utf-8")).get("generation")
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
+    """예측이 기댄 지식의 세대 — 마이닝 모델(data/model/generation.json), 없으면 카드 매니페스트(out/)."""
+    for f in (p.model / "generation.json", p.manifest):
+        try:
+            gen = json.loads(f.read_text(encoding="utf-8")).get("generation")
+        except (FileNotFoundError, json.JSONDecodeError):
+            continue
+        if gen:
+            return gen
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", help="work-atlas 저장소 루트 (기본: 이 스크립트의 저장소)")
+    ap = argparse.ArgumentParser(prog="atlas record", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--root", help="work-atlas 인스턴스 루트 (기본: ATLAS_HOME → 현재 폴더에서 위로 찾기)")
     ap.add_argument("--dry-run", action="store_true", help="쓰지 않고 만들 사건만 출력")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

@@ -11,7 +11,7 @@
 집계: 값 하나에 규칙이 여러 개 걸려도 위반 값은 1개로 센다(violation_rate = 위반 값 / 검사한 값 ≤ 1).
      규칙별 건수(by_rule)는 따로 센다. 코드북 버전이 다른 WU 수는 위반이 아니라 경고로 센다.
 
-사용: python3 validate.py [--in data/units/annotated.jsonl] [--out data/units/current.jsonl] [--report r.json]
+사용: python -m atlas validate [--in data/units/annotated.jsonl] [--out data/units/current.jsonl] [--report r.json]
 입력은 바꾸지 않는다. 채점·유사 사례·카드·사용 스킬은 --out(기본 current.jsonl)만 읽는다.
 """
 from __future__ import annotations
@@ -23,8 +23,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import RESERVED, Codebook, is_unknown, paths, read_jsonl, write_jsonl, write_text  # noqa: E402
+from .common import RESERVED, Codebook, is_unknown, paths, read_jsonl, write_jsonl, write_text
 
 VOCABS = {"pitfalls": "pitfalls", "moves": "moves", "hidden_subtasks": "subtasks"}
 
@@ -162,7 +161,7 @@ def run(units: list[dict], cb: Codebook) -> tuple[list[dict], dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="atlas validate", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root")
     ap.add_argument("--in", dest="inp", help="기본: data/units/annotated.jsonl")
     ap.add_argument("--out", help="기본: data/units/current.jsonl")

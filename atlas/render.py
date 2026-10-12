@@ -7,7 +7,7 @@
   **1차 방어는 수집기다**: 필요한 만큼만 발췌하고, 사람 이름은 역할로, 비밀값은 지운다.
   여기의 마스킹(비밀값·토큰·이메일·전화·주민/외국인 등록번호)은 수집기가 놓친 것을 잡는 안전망이고 완전하지 않다.
 
-사용: python3 render_wu.py [--units data/units/stitched.jsonl] [--out-dir data/render] [--max-excerpt 500] [--max-doc-kb 40]
+사용: python -m atlas render [--units data/units/stitched.jsonl] [--out-dir data/render] [--max-excerpt 500] [--max-doc-kb 40]
 출력: WU 마다 <out-dir>/<wu>-<hash8>.md 와 <out-dir>/index.json ({wu_id: {file, input_hash}}).
 """
 from __future__ import annotations
@@ -18,8 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import parse_ts, paths, read_jsonl, read_observations, sha256_text, write_text  # noqa: E402
+from .common import parse_ts, paths, read_jsonl, read_observations, sha256_text, write_text
 
 # 순서가 중요하다: 헤더·토큰 형식을 먼저 가리고, 그다음 "키 = 값" 형식을 가린다.
 # 모든 반복에 상한을 둔다 — 상한 없는 반복은 긴 한 줄(base64·압축 코드)에서 시간이 제곱으로 는다.
@@ -114,7 +113,7 @@ def safe_name(wu_id: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="atlas render", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root")
     ap.add_argument("--units")
     ap.add_argument("--out-dir")

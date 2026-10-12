@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "GENERATED from codebook.yaml version 0 (track A) by method/recipes/gen_annotation_schema.py — 손으로 고치지 않는다. 코드북을 고치고 다시 생성한다.",
+  "$comment": "GENERATED from codebook.yaml version 0 (track A) by atlas/schema_gen.py (python -m atlas gen-schema) — 손으로 고치지 않는다. 코드북을 고치고 다시 생성한다.",
   "title": "WorkUnitAnnotation",
   "type": "object",
   "additionalProperties": false,

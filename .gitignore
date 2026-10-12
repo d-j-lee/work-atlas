@@ -8,3 +8,8 @@ __pycache__/
 .env
 *.local.*
 .claude/settings.local.json
+
+# 파이썬 패키징 산출물 (생성물 디렉터리는 out/ — setuptools 의 build/ 와 겹치지 않게)
+build/
+dist/
+*.egg-info/
