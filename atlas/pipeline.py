@@ -1,9 +1,10 @@
 """빌드 — 정본(관측·방법·오버레이)에서 파생물 전부를 처음부터 다시 만든다 (P2, N10).
 
-  python -m atlas build [--collect] [--as-of …] [--level commit|wu] [--no-report]
+  python -m atlas build [--collect] [--as-of …] [--level commit|wu] [--no-report] [--no-llm]
 
-  (collect →) stitch → [render · 주석 이어 붙이기] → validate → mine → catalog → report
-- 주석(LLM, 트랙 A)은 사내 annotate 레시피가 data/units/annotated.jsonl 로 낸다. 있으면 입력 문서 해시(input_hash)가
+  (collect →) stitch → [render · 주석 이어 붙이기] → validate → mine(카테고리 포함) → catalog → [llm 자동 작업] → report(업무 지도 + 안내서)
+- llm 자동 작업: atlas.toml [llm] auto 에 적은 작업(예: category_card)을 백엔드가 있을 때만 돌린다(예산·캐시 안에서). --no-llm 으로 끈다.
+- 주석(LLM, 트랙 A)은 atlas llm run annotate 가 data/units/annotated.jsonl 로 낸다. 있으면 입력 문서 해시(input_hash)가
   같은 WU 에만 주석을 이어 붙이고, 해시가 바뀐 WU 는 '다시 주석할 것'으로 센다(캐시 무효화). 없으면 주석 없이 간다.
 - 단계마다 걸린 시간을 남긴다(P9: 비용 기록). 한 단계라도 실패하면 거기서 멈춘다 — 반쯤 갱신된 세대를 남기지 않는다.
 """
@@ -33,7 +34,7 @@ def merge_annotations(stitched: list[dict], annotated: list[dict], hashes: dict[
 
 
 def run(p, cfg: dict, as_of_text: str | None = None, collect: bool = False, level: str = "commit",
-        report: bool = True, log=print) -> dict:
+        report: bool = True, log=print, llm: bool = True) -> dict:
     from . import catalog, render, stitch, validate
     from . import mine as minemod
     from .common import Codebook, read_observations
@@ -79,16 +80,43 @@ def run(p, cfg: dict, as_of_text: str | None = None, collect: bool = False, leve
     cat = catalog.build(p, cfg)
     write_text(p.model / "catalog.json", json.dumps(cat, ensure_ascii=False, indent=2) + "\n")
     done("catalog")
+    llm_summary = None
+    auto = list((cfg.get("llm") or {}).get("auto") or [])
+    if llm and auto and (cfg.get("llm") or {}).get("backend", "none") != "none":
+        from . import llm as llmmod
+        step("llm")
+        llm_summary = {}
+        runner = llmmod.Runner(p, cfg, log=log)
+        ctx = llmmod.Ctx(p, cfg)
+        for name in auto:
+            task = llmmod.TASKS.get(name)
+            if not task or name == "work_draft":           # 작업 폴더에 쓰는 작업은 무인으로 돌리지 않는다
+                continue
+            args = argparse.Namespace(key=None, limit=None, refresh=False, dry_run=False, write=False, work=None)
+            try:
+                accepted, tally = runner.run(task, ctx, args)
+                if accepted:
+                    task.sink(ctx, accepted, args)
+                llm_summary[name] = dict(tally)
+            except Exception as e:                       # noqa: BLE001 — 선택 단계다. 빌드(지도·안내서)를 막지 않고 남긴다
+                llm_summary[name] = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+                log(f"[llm] {name} 실패 — 빌드는 계속한다: {e}")
+        llm_summary["cost_usd"] = round(runner.spent, 4)
+        done("llm")
     out_report = None
     if report:
         from . import report as reportmod
         step("report")
         out_report = p.reports / f"atlas-{gen['generation']}.html"
         write_text(out_report, reportmod.build_html(p))
+        from . import catview, guide
+        cm, _ = catview.load(p)
+        if cm:
+            guide.write_all(p, cm)                       # data/reports/guides/ — 카테고리별 Markdown + Mermaid
         done("report")
     summary = {"generation": gen["generation"], "as_of": gen["as_of"], "wus": srep["wus"],
                "annotations": ann, "violation_rate": vrep["violation_rate"], "claims": gen["claims"],
-               "warnings": len(cat["warnings"]), "report": str(out_report) if out_report else None,
+               "warnings": len(cat["warnings"]), "report": str(out_report) if out_report else None, "llm": llm_summary,
                "seconds": timings}
     write_text(p.model / "build.json", json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
     return summary
@@ -102,10 +130,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--collect", action="store_true", help="먼저 설정의 모든 소스를 수집한다")
     ap.add_argument("--level", choices=["commit", "wu"], default="commit")
     ap.add_argument("--no-report", action="store_true")
+    ap.add_argument("--no-llm", action="store_true", help="[llm] auto 작업을 이번에는 돌리지 않는다")
     args = ap.parse_args(argv)
     p = paths(args.root)
     try:
-        summary = run(p, configmod.load(p.root), args.as_of, args.collect, args.level, not args.no_report)
+        summary = run(p, configmod.load(p.root), args.as_of, args.collect, args.level, not args.no_report, llm=not args.no_llm)
     except RuntimeError as e:
         print(f"[빌드 중단] {e}", file=sys.stderr)
         return 1

@@ -1,0 +1,48 @@
+# 업무 카테고리 정의 — 일을 어떤 단위로 묶어 볼지(사람이 정함). 작업단위를 여기에 놓는 것은 계산이다(atlas/taxonomy.py).
+# 결과(카테고리별 흐름 · 순서 · 관계 · 참조점 · 접점)는 atlas build 가 data/model/categories.json 에 내고,
+# 업무 지도(atlas report) · 안내서(atlas guide) · 맥락(atlas context) · MCP 가 읽는다. 쓰는 법은 CHANNELS.md.
+# 바꾸면 세대가 바뀐다(이 파일은 세대 id 의 입력이다). 바꾼 이유는 method/DECISIONS.md 에 한 줄.
+#
+# 공개 템플릿에서는 아래 '사람이 채우는 칸'이 모두 비어 있어야 한다 — 사내 업무에서 유래한 내용이다(atlas check 가 거부한다).
+version: 1
+
+# 영역 — 카테고리 트리. 값을 읽는 원천을 앞에서부터 본다(처음 값이 있는 것):
+#   트래커 라벨(component · type · priority · label · fix_version …) · path(아래 paths 규칙) · work_kind · work_tags(작업 기록)
+#   · archetype(원형 주석 — 사후 검증을 통과한 것)
+# split: 값 안의 구분자로 상하위를 만든다 (lang.text.translate → lang › lang.text › lang.text.translate, '*' 조각은 버린다)
+area:
+  label: 영역
+  from: [component, path, work_tags]
+  split: "[./]"
+
+# 국면 — 영역마다 다시 나눠 보는 축. 같은 영역이라도 결함과 기능은 흐름이 다르다. 첫 국면이 기본 칸이다.
+# 국면마다 merge 로 값 이름을 통일할 수 있다 (예: merge: {Defect: Bug})
+facets:
+  - id: kind
+    label: 유형
+    from: [type, work_kind]
+
+fold_case: true          # 대소문자만 다른 영역 값(Lang · lang)은 가장 흔한 표기로 모은다
+
+# ── 사람이 채우는 칸 (사내 인스턴스) ──────────────────────────────────────────────────────────────
+# paths: 트래커 컴포넌트가 없는 일을 경로로 놓는다.  "glob": 영역 값
+#   후보는 빌드가 계산해 낸다(카탈로그 · atlas guide 의 '경로 규칙 후보' — 그 디렉터리를 거의 혼자 쓰는 영역과, 덮게 될 미분류 수)
+#   예) "src/main/java/com/example/billing/**": billing
+paths: {}
+# merge: 영역 값 이름 통일·묶기.  "옛 값": "새 값"         예) Lang: lang · "server-old": server
+merge: {}
+# parents: 구분자로 드러나지 않는 상위.  "값": "상위 값"    예) "java client": clients · "c client": clients
+parents: {}
+# names: 표시 이름.  "값": "이름"                           예) "lang.time": 날짜·시간
+names: {}
+# contacts: 접점 — 팀 · 채널 · 역할만 (사람 이름 금지). 하위 카테고리가 상위의 것을 물려받는다.
+#   키: 영역 값 · "<영역> / <유형>" · "(전체)".  칸: team · channel · role · when(언제 찾나) · note
+#   예) server:
+#         - { team: 서버팀, channel: "#server-oncall", when: 장애·롤백 }
+#       "server / Bug":
+#         - { role: qa, when: Resolved 전 재현 확인 }
+contacts: {}
+# references: 참조점 — 런북 · 설계 문서 · 대시보드 · 저장소 경로. 칸: title · url · path · note
+#   예) server:
+#         - { title: 배포 런북, url: "https://wiki.example/runbook" }
+references: {}

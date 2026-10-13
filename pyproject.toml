@@ -18,7 +18,7 @@ mcp = ["mcp>=1.2"]
 atlas = "atlas.__main__:main"
 
 [tool.setuptools]
-packages = ["atlas", "atlas.collect", "atlas.mine"]
+packages = ["atlas", "atlas.collect", "atlas.mine", "atlas.llm"]
 
 [tool.setuptools.dynamic]
 version = { attr = "atlas.__version__" }

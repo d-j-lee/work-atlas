@@ -6,6 +6,7 @@
   claims.jsonl       주장 전부 (cochange · hotspot · process · practice · moves). 형식은 mine/claims.py
   paths.json         경로별 요약 — 훅이 편집 순간 빠르게 읽는다 (핫스팟 + 동반 변경 상위 + 파일별 변경 수)
   text_index.json    비슷한 과거 작업 찾기용 TF-IDF 색인 + WU 요약
+  categories.json    업무 카테고리 모델 — 카테고리별 프로필 · 흐름 · 순서 · 관계 · 참조점 · 접점 (mine/category.py)
   generation.json    이번 세대: id · as_of · 입력 해시 · 주장 수 · 이전 세대 대비 변화(drift)
   history/<세대>.jsonl  이전 세대의 주장 요약 (history_generations 개까지, 변화 계산용)
 세대 id 는 입력(관측 id 집합·설정·레시피 버전·as_of 날짜)의 해시다 — 같은 입력이면 같은 세대.
@@ -22,13 +23,14 @@ from .. import config as configmod
 from ..common import dumps, load_units, paths, read_jsonl, read_observations, write_jsonl, write_text
 from ..stitch import RECIPE as STITCH_RECIPE, latest_snapshots, parse_as_of
 from . import claims as C
-from . import cochange, corpus as corpusmod, hotspot, process, text
+from . import category, cochange, corpus as corpusmod, hotspot, process, text
+from ..taxonomy import Taxonomy
 
 MODEL_FORMAT = 1          # data/model 파일 구조의 버전. 바꾸면 올린다 — 소비 쪽이 옛 형식을 조용히 잘못 읽지 않게
 # 세대 id 에 들어가는 레시피 버전. 레시피(상관 포함)의 의미가 바뀌면 그 버전을 올린다 — 같은 관측·설정이라도
 # 다른 의미로 만든 세대가 같은 id 를 갖지 않게(세대 비교·주석 캐시가 여기에 기댄다).
 RECIPES = [STITCH_RECIPE, cochange.RECIPE, hotspot.RECIPE, process.RECIPE_PROCESS, process.RECIPE_PRACTICE,
-           process.RECIPE_MOVES, text.RECIPE]
+           process.RECIPE_MOVES, text.RECIPE, category.RECIPE]
 
 
 def load_excerpts(p) -> dict[str, str]:
@@ -44,11 +46,14 @@ def scope_resolver(obs_by_id: dict):
     return scope_of
 
 
-def generation_id(observations: list[dict], cfg: dict, as_of) -> str:
+def generation_id(observations: list[dict], cfg: dict, as_of, method: dict | None = None) -> str:
+    """method: 세대에 영향을 주는 사람의 방법(카테고리 정의) — 바꾸면 세대가 바뀐다."""
     h = hashlib.sha256()
     for oid in sorted(o["obs_id"] for o in observations):
         h.update(oid.encode())
     h.update(dumps(cfg).encode())
+    if method:                                  # 사람이 쓴 YAML 에는 날짜 같은 값도 있다 — 글자로 바꿔 센다
+        h.update(json.dumps(method, ensure_ascii=False, sort_keys=True, default=str).encode())
     h.update(",".join(RECIPES).encode())
     return f"gen-{as_of:%Y%m%d}-{h.hexdigest()[:8]}"
 
@@ -118,7 +123,18 @@ def run(p, cfg: dict, as_of, level: str = "commit") -> tuple[list[dict], dict]:
     claims = (cochange.mine(corp, level) + hotspot.mine(corp) + process.mine_process(units, scope_of)
               + process.mine_practice(units, corp, scope_of) + process.mine_moves(units, scope_of))
     claims.sort(key=lambda c: c["claim_id"])
-    gen = generation_id(observations, cfg, as_of)
+    from ..taxonomy import load_data, problems
+    try:
+        tdata = load_data(p.root)
+    except Exception as e:                      # noqa: BLE001 — YAML 문법 오류 등. 사람이 읽을 이유로 멈춘다
+        raise RuntimeError(f"method/categories.yaml 을 읽지 못했다: {e}") from e
+    bad = problems(tdata)
+    if bad:
+        raise RuntimeError("method/categories.yaml 의 모양이 틀렸다 — " + "; ".join(bad))
+    tax = Taxonomy(tdata)
+    gen = generation_id(observations, cfg, as_of, tax.data)
+    tindex = text_index(units, corp, scope_of)
+    cats = category.mine(units, corp, tax, cfg, tindex["vecs"])
 
     model = p.model
     history = model / "history"
@@ -150,13 +166,16 @@ def run(p, cfg: dict, as_of, level: str = "commit") -> tuple[list[dict], dict]:
         "recipes": RECIPES,
         "inputs": {"observations": len(observations), "units": len(units), "commits": len(corp.commits)},
         "claims": {k: dict(sorted(v.items())) for k, v in sorted(counts.items())},
+        "categories": {"n": len(cats["categories"]), **cats["coverage"]},
         "drift": C.drift(prev_claims, claims) if prev_claims else None,
     }
     write_jsonl(model / "claims.jsonl", claims)
     write_text(model / "paths.json", json.dumps({"format": MODEL_FORMAT, "generation": gen, "scopes": path_index(claims, corp)},
                                                 ensure_ascii=False, separators=(",", ":")) + "\n")
-    write_text(model / "text_index.json", json.dumps({"format": MODEL_FORMAT, "generation": gen,
-                                                      **text_index(units, corp, scope_of)},
+    write_text(model / "text_index.json", json.dumps({"format": MODEL_FORMAT, "generation": gen, **tindex},
+                                                     ensure_ascii=False, separators=(",", ":")) + "\n")
+    write_text(model / "categories.json", json.dumps({"format": MODEL_FORMAT, "generation": gen,
+                                                      "as_of": meta["as_of"], **cats},
                                                      ensure_ascii=False, separators=(",", ":")) + "\n")
     write_text(model / "generation.json", json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
     return claims, meta
@@ -171,7 +190,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     p = paths(args.root)
     cfg = configmod.load(p.root)
-    _, meta = run(p, cfg, parse_as_of(args.as_of), args.level)
+    try:
+        _, meta = run(p, cfg, parse_as_of(args.as_of), args.level)
+    except RuntimeError as e:
+        print(f"[마이닝 중단] {e}", file=sys.stderr)
+        return 1
     print(json.dumps({k: meta[k] for k in ("generation", "previous", "inputs", "claims")}, ensure_ascii=False, indent=2))
     if meta["drift"]:
         d = meta["drift"]

@@ -4,6 +4,7 @@
   triage       트리아지 때의 예측        → atlas.triage
   feedback     사람의 판정과 도움 여부    → atlas.feedback
   self-report  기록 없이 한 일 한 줄       → self_report.untracked_work
+  llm-feedback LLM 출력(카테고리 해설)에 대한 판정 → atlas.llm_feedback ('틀림'이면 다음 빌드부터 그 해설을 숨긴다)
 
 예:
   python -m atlas record triage --anchor issue:ABC-130 --archetype ops-data-fix --conf medium \\
@@ -98,6 +99,21 @@ def build_feedback(anchor: str, archetype_ok: str, verdict: str, ts: str) -> dic
     return _base("atlas.feedback", [parse_anchor(anchor)], payload, ts)
 
 
+LLM_FEEDBACK_TASKS = ("category_card",)
+
+
+def build_llm_feedback(task: str, key: str, digest: str, verdict: str, note: str, ts: str) -> dict:
+    if task not in LLM_FEEDBACK_TASKS:
+        raise RecordError(f"판정을 받는 LLM 작업은 {LLM_FEEDBACK_TASKS} 뿐이다")
+    if not digest:
+        raise RecordError(f"'{key}' 에 지금 보이는 {task} 출력이 없다 — 판정할 대상이 없다")
+    note = " ".join(note.split())
+    if len(note) > 200:
+        raise RecordError("메모는 200자까지 (사람 이름은 쓰지 않는다)")
+    payload = {"task": task, "key": key, "digest": digest, "verdict": verdict, "note": note}
+    return _base("atlas.llm_feedback", [{"type": "llm_output", "id": f"{task}:{key}"}], payload, ts)
+
+
 def build_self_report(text: str, ts: str) -> dict:
     text = text.strip()
     if not text:
@@ -162,6 +178,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("self-report")
     s.add_argument("--text", required=True)
 
+    lf = sub.add_parser("llm-feedback")
+    lf.add_argument("--task", default="category_card", choices=["category_card"])
+    lf.add_argument("--key", required=True, help="카테고리 키 · 이름 (atlas guide --list)")
+    lf.add_argument("--verdict", required=True, choices=["useful", "wrong", "not_useful"])
+    lf.add_argument("--note", default="")
+
     args = ap.parse_args(argv)
     p = paths(args.root)
     cb = Codebook.load(p)
@@ -172,6 +194,14 @@ def main(argv: list[str] | None = None) -> int:
                                  args.pitfall, args.move, current_generation(p), ts)
         elif args.cmd == "feedback":
             event = build_feedback(args.anchor, args.archetype_ok, args.verdict, ts)
+        elif args.cmd == "llm-feedback":
+            from . import catview, guide, llm
+            m, why = catview.load(p)
+            if not m:
+                raise RecordError(why)
+            key = guide.resolve(m, args.key) or args.key
+            card = llm.rendered_cards(p, m).get(key) or {}
+            event = build_llm_feedback(args.task, key, card.get("digest", ""), args.verdict, args.note, ts)
         else:
             event = build_self_report(args.text, ts)
         if args.dry_run:

@@ -703,7 +703,7 @@ class TestBuildAndConsumers(unittest.TestCase):
             self.skipTest("mcp 선택 의존성이 없다")
         import asyncio
         names = [t.name for t in asyncio.run(srv.list_tools())]
-        self.assertEqual(sorted(names), ["atlas_catalog", "atlas_context", "atlas_similar"])
+        self.assertEqual(sorted(names), ["atlas_catalog", "atlas_categories", "atlas_category", "atlas_context", "atlas_similar"])
 
 
 # ---------------------------------------------------------------- 평가

@@ -9,6 +9,8 @@
   claims    주장 종류×강도 · 이전 세대 대비 변화 (generation.json)
   ai        AI 세션: 수·작업단위 연결 비율·편집·테스트 실행 비율·도구 오류율·압축 횟수
   works     작업 폴더: 수·상태별·키 있음·기록 없음·결과 없이 끝남·오래 방치·트래커와 어긋남·비밀값 파일·작업 폴더에서 연 세션
+  categories 업무 카테고리: 수 · 미분류 비율 · 영역을 정한 원천 · 흐름이 있는 카테고리 수 · 경로 규칙 후보 수
+  llm       LLM 작업: 이번 달 호출 · 비용 · 통과율 · 거절 이유 · 해설 카드 수 · 사람의 판정(틀림이면 숨김 목록)
   usage     트리아지·판정·자기 보고 건수
   warnings  정책 임계치(policy.md §7)·운영 위험에 걸린 것과 권하는 조치 — 사람이 볼 곳은 여기다
 """
@@ -109,6 +111,9 @@ def build(p, cfg: dict, now: dt.datetime | None = None) -> dict:
         }
 
     works = _works(snaps, sessions, units, cfg, now) if snaps else None
+    categories = _categories(p)
+    from . import llm as llmmod
+    llm = {**llmmod.status(p), **llmmod.feedback_index(observations), "backend": (cfg.get("llm") or {}).get("backend", "none")}
 
     outcomes = Counter(u["stats"].get("outcome") or "진행 중" for u in units if u["span"].get("settled")
                        or not u["span"].get("end"))
@@ -128,6 +133,8 @@ def build(p, cfg: dict, now: dt.datetime | None = None) -> dict:
         "drift": gen.get("drift"),
         "ai": ai,
         "works": works,
+        "categories": categories,
+        "llm": llm,
         "usage": usage,
     }
     cat["warnings"] = warnings(cat, cfg, now)
@@ -168,13 +175,30 @@ def _works(snaps: list[dict], sessions: list[dict], units: list[dict], cfg: dict
     }
 
 
+def _categories(p) -> dict | None:
+    m = _load(p.model / "categories.json")
+    if not m or "categories" not in m:
+        return None
+    cats = m["categories"]
+    return {
+        "categories": len(cats),
+        "areas": sum(1 for e in cats.values() if e["kind"] == "area"),
+        "with_flow": sum(1 for e in cats.values() if e.get("flow")),
+        "with_contacts": sum(1 for e in cats.values() if (e.get("contacts") or {}).get("configured")),
+        **{k: m.get("coverage", {}).get(k) for k in ("units", "uncategorized", "ratio", "by_source")},
+        "path_suggestions": len((m.get("suggestions") or {}).get("paths") or []),
+        "path_suggestions_cover": sum(s["covers"] for s in (m.get("suggestions") or {}).get("paths") or []),
+    }
+
+
 def warnings(cat: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     """문턱은 atlas.toml [policy] 에서 읽는다(의미는 policy.md §7). 각 경고에는 근거 수치와 권하는 조치를 붙인다."""
     pol = cfg["policy"]
     out = []
 
     def warn(level, what, evidence, action, area="data"):
-        """area: data(지식을 얼마나 믿을지 — 맥락 첫 줄에 나온다) · workspace(작업 폴더 위생 — 카탈로그·atlas work status 에만)."""
+        """area: data(지식을 얼마나 믿을지 — 맥락 첫 줄에 나온다) · workspace(작업 폴더 위생 — 카탈로그·atlas work status 에만)
+        · category(카테고리 정의 손질) · llm(LLM 작업 운영) — 이 둘은 지식의 신뢰와 무관해 카탈로그에만."""
         out.append({"level": level, "what": what, "evidence": evidence, "action": action, "area": area})
 
     for s in cat["sources"]:
@@ -221,6 +245,26 @@ def warnings(cat: dict, cfg: dict, now: dt.datetime) -> list[dict]:
         if wk["unknown_status"]:
             warn("정보", f"정해진 값이 아닌 작업 상태 {wk['unknown_status']}건", f"허용: {' · '.join(STATUSES)}",
                  "WORK.md front-matter 의 status 를 고친다", "workspace")
+    cg = cat.get("categories")
+    if cg and cg["ratio"] is not None and cg["ratio"] > float(pol.get("uncategorized_max", 0.3)):
+        hint = (f"경로 규칙 후보 {cg['path_suggestions']}개가 미분류 {cg['path_suggestions_cover']}건을 덮는다 — atlas guide 의 README 에서 골라 "
+                "method/categories.yaml 의 paths 로" if cg["path_suggestions"] else
+                "트래커 컴포넌트를 채우거나, method/categories.yaml 의 paths·작업 기록 tags 로 영역을 준다")
+        warn("제안", f"업무 카테고리 미분류가 많다 (> {float(pol.get('uncategorized_max', 0.3)):.0%})",
+             f"{cg['uncategorized']:,}/{cg['units']:,} ({cg['ratio']:.0%})", hint, area="category")
+    lm = cat.get("llm") or {}
+    if lm.get("calls", 0) >= 5 and lm.get("accept_rate") is not None and lm["accept_rate"] < float(pol.get("llm_accept_min", 0.7)):
+        warn("주의", "LLM 출력의 근거 검증 통과율이 낮다", f"이번 달 {lm['accepted']}/{lm['calls']} · 거절 이유 {', '.join(lm['top_reasons'])}",
+             "프롬프트(method/prompts)·모델을 점검 — atlas llm status 로 이유를 본다", area="llm")
+    verdicts = lm.get("verdicts") or {}
+    judged = sum(verdicts.values())
+    if judged >= 10 and verdicts.get("useful", 0) / judged < float(pol.get("llm_useful_min", 0.6)):
+        warn("주의", "LLM 해설이 쓸모 있다는 사람 판정이 적다", f"쓸모 있음 {verdicts.get('useful', 0)}/{judged}",
+             "틀림·쓸모없음 판정의 메모를 보고 프롬프트·입력 맥락을 고친다 — 나아지지 않으면 [llm] auto 에서 뺀다", area="llm")
+    cap = float((cfg.get("llm") or {}).get("max_usd_per_month", 0) or 0)
+    share = float(pol.get("llm_budget_warn", 0.8))
+    if cap and lm.get("cost_usd", 0) >= share * cap:
+        warn("정보", f"LLM 월 예산의 {share:.0%} 를 넘었다", f"${lm['cost_usd']:.2f} / ${cap:.2f}", "atlas.toml [llm] 상한·limit_per_run 을 본다", area="llm")
     d = cat.get("drift")
     if d and d.get("removed", 0) > 0.3 * max(1, sum(sum(v.values()) for v in (cat.get("claims") or {}).values())):
         warn("주의", "이전 세대 대비 주장이 많이 사라졌다", f"-{d['removed']}",
@@ -259,6 +303,15 @@ def render_text(cat: dict) -> str:
         w = cat["works"]
         lines.append(f"작업 폴더 {w['works']} ({', '.join(f'{k} {v}' for k, v in w['by_status'].items())}) · 키 있음 {w['keyed']}"
                      f" · 기록 없음 {w['no_record']} · 여기서 연 세션 {w['sessions_in_work_folders']}")
+    cg = cat.get("categories")
+    if cg:
+        lines.append(f"업무 카테고리 {cg['categories']} (영역 {cg['areas']} · 흐름 있음 {cg['with_flow']} · 접점 있음 {cg['with_contacts']})"
+                     f" · 미분류 {cg['uncategorized']}/{cg['units']} · 경로 규칙 후보 {cg['path_suggestions']}")
+    lm = cat.get("llm") or {}
+    if lm.get("calls") or lm.get("cards") or lm.get("backend", "none") != "none":
+        lines.append(f"LLM {lm.get('backend')} · 이번 달 호출 {lm.get('calls', 0)} (통과 {lm.get('accepted', 0)} · 거절 {lm.get('rejected', 0)}"
+                     f" · 오류 {lm.get('errors', 0)}) · ${lm.get('cost_usd', 0):.2f} · 해설 카드 {lm.get('cards', 0)}"
+                     + (f" · 판정 {lm['verdicts']}" if lm.get("verdicts") else ""))
     u = cat["usage"]
     lines.append(f"사용  트리아지 {u['triages']} · 판정 {u['feedback']} · 자기 보고 {u['self_reports']}")
     if cat["warnings"]:

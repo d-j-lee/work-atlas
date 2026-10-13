@@ -64,6 +64,12 @@ class WorkspaceCase(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
         shutil.rmtree(self.root, ignore_errors=True)
 
+    def collect_works(self, at: str = COLLECTED):
+        """수집 시각을 고정한다 — 실제 시계를 쓰면 기준 시각(as_of)보다 늦은 스냅숏이 생겨 날짜에 따라 깨진다."""
+        from atlas.collect import run_one
+        with mock.patch.object(wscol, "now_iso", return_value=at):
+            return run_one(self.p, self.cfg, "workspace", self.cfg["sources"]["workspace"][0], dry_run=False, full=False)
+
     def snap(self, rel: str, collected=COLLECTED):
         return wscol.snapshot(self.src, self.work / rel, rel, self.P, collected)
 
@@ -359,8 +365,7 @@ class TestWorkConsumers(WorkspaceCase):
                                      issue_event("ABC-7", 1, "issue.resolved", "2026-02-03T10:00:00+09:00",
                                                  labels={"resolution": ["Fixed"]})])
         with redirect_stdout(io.StringIO()):
-            from atlas.collect import run_one
-            run_one(self.p, self.cfg, "workspace", self.cfg["sources"]["workspace"][0], dry_run=False, full=False)
+            self.collect_works()
             pipeline.run(self.p, self.cfg, "2026-10-13T12:00:00+09:00", log=lambda *a: None)
 
     def test_text_index_uses_work_records(self):
@@ -427,8 +432,7 @@ class TestWorkConsumers(WorkspaceCase):
         put(self.work, "ABC-6-pay/WORK.md", record("ABC-6", "done", "결제 보상 누락", closed="2026-01-05",
                                                     problem="보상 지급 배치가 멈춘다", result="배치 재시작"))
         with redirect_stdout(io.StringIO()):
-            from atlas.collect import run_one
-            run_one(self.p, self.cfg, "workspace", self.cfg["sources"]["workspace"][0], dry_run=False, full=False)
+            self.collect_works("2026-10-13T10:00:00+09:00")
             pipeline.run(self.p, self.cfg, "2026-10-13T12:00:00+09:00", log=lambda *a: None)
         again = json.loads((self.p.model / "catalog.json").read_text(encoding="utf-8"))
         src = next(s for s in again["sources"] if s["system"] == "workspace")
@@ -627,8 +631,7 @@ class TestReviewFixes(WorkspaceCase):
         put(self.work, "ABC-1-2/WORK.md", "---\nkeys: [ABC-1, ABC-2]\nstatus: active\n---\n# 세션 만료 두 건\n## 문제\n세션 만료 단위\n")
         put(self.work, "ABC-3/WORK.md", record("ABC-3", "done", "세션 만료 옛 일", problem="세션 만료 단위"))
         with redirect_stdout(io.StringIO()):
-            from atlas.collect import run_one
-            run_one(self.p, self.cfg, "workspace", self.cfg["sources"]["workspace"][0], dry_run=False, full=False)
+            self.collect_works()
             pipeline.run(self.p, self.cfg, "2026-10-13T12:00:00+09:00", log=lambda *a: None)
         mine_ = ws.context_md(self.p, self.cfg, self.work / "20261001-notes")
         self.assertNotIn("20261001-notes (", mine_)

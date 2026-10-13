@@ -18,6 +18,7 @@
 | **L0~L3** | 계층: 관측 → 작업단위 → 모델(주장) → 카드 (§4). 평가 지표의 L3(상위 3 적중)와는 다르다 |
 | **주장 (claim)** | 마이닝이 낸 지식 한 단위 — "a 를 바꾸면 b 도 바뀌어 왔다(신뢰도·건수)"처럼 근거 수와 강도가 붙는다 (§4 L2) |
 | **카탈로그** | 데이터와 지식에 대한 메타 — 신선도·커버리지·고아·세대 변화·경고 (§4) |
+| **업무 카테고리** | 사람이 정한 축(트래커 컴포넌트 → 유형 등)으로 묶은 일의 단위. 카테고리마다 흐름·순서·관계·참조점·접점을 계산한다 (§4 L2 · `CHANNELS.md`) |
 | **P1~P9 · N1~N10** | 설계 원칙 (§3) · 노이즈 방지 규칙 (§7.3) |
 | **U1~U5 · D0~D3** | 용도 (§8) · 사람–AI 위임 수준 (§9) |
 | **트랙 A · B** | 최소 경로 · 확장 (§12) |
@@ -73,7 +74,7 @@
 | 분야 | 빌려오는 것 | 이 체계에서의 자리 |
 |---|---|---|
 | 이벤트 소싱 [Fowler 2005] | 상태는 이벤트 로그에서 재구성한다 | 원천 로그 + 재빌드 |
-| 객체 중심 프로세스 마이닝 [van der Aalst 2019; Ghahfarokhi 2021] | 한 이벤트를 여러 객체에 연결하고, 단일 케이스 ID 강제의 왜곡을 피한다 | L0 관측 모델 |
+| 객체 중심 프로세스 마이닝 [van der Aalst 2019a; Ghahfarokhi 2021] | 한 이벤트를 여러 객체에 연결하고, 단일 케이스 ID 강제의 왜곡을 피한다 | L0 관측 모델 |
 | 저장소 마이닝 [Bird 2009; Wu 2011; Śliwerski 2005] | 이슈-커밋 누락 링크의 편향, 확률적 링크 복원, 결함 유발 변경 역추적(SZZ) | L1 상관, 사후 귀속 |
 | 변경 이력 마이닝 [Zimmermann 2004; Graves 2000; Kim 2007; Herzig & Zeller 2013] | 동반 변경 규칙(탐색 시나리오·시간 분할 평가), 과거 변경·결함으로 결함 위치 예측, 뒤엉킨 변경의 한계 | L2 주장, 효용 평가 |
 | 직교 결함 분류 ODC [Chillarege 1992] | 결함을 서로 독립인 유형으로 나눠 공정 신호로 쓴다 | `failure_class` 패싯 |
@@ -96,7 +97,7 @@
 
 **P2. 원천과 파생을 분리한다.** 원천(관측·방법·오버레이)만 정본이다. 작업단위·모델·카드는 버전 붙은 레시피로 매번 처음부터 빌드한다. 결과가 이상하면 결과를 고치지 않고 원천이나 레시피를 고친다.
 
-**P3. 해석은 근거를 달고, 원천에 들어가지 않는다.** 원천 로그에는 결정론적 추출(ID·시각·행위자 역할·링크·수치·기존 라벨)만 들어간다. LLM이 만든 모든 값은 근거 관측 ID를 달고, 근거가 없으면 `unknown`이다. `unknown`은 실패가 아니라 커버리지 지표다.
+**P3. 해석은 근거를 달고, 원천에 들어가지 않는다.** 원천 로그에는 결정론적 추출(ID·시각·행위자 역할·링크·수치·기존 라벨)만 들어간다. LLM이 만든 모든 값은 근거 관측 ID를 달고, 근거가 없으면 `unknown`이다. `unknown`은 실패가 아니라 커버리지 지표다. 사람에게 보이는 LLM 문장도 같다 — **숫자는 계산이 내고 LLM 은 말만 한다**(수치는 사실 id 자리표시로만, 보여 줄 때 지금 값으로). 근거가 없거나 근거에 없는 숫자를 쓴 문장은 버린다.
 
 **P4. 축은 패싯, 단위와 어휘는 창발.** 분류 축은 작고 직교하게 둔다. 원형·함정·하위작업·처리 수는 관측에서 개방 코딩으로 창발시켜 **id가 붙은 통제 어휘**로 만든다. 주석자는 어휘에서 고르거나 `residual`과 메모를 남긴다. 카드는 id를 **센다** — 문장을 요약하지 않는다.
 
@@ -132,7 +133,7 @@ flowchart LR
 ### L0 관측
 
 - 한 행은 한 사건이다. 이슈 생성·상태 변경·코멘트, 커밋·MR·리뷰·머지, 배포·설정 변경, 알림·장애, 메일·메신저 메시지, 문서 생성·수정, 일정, 자기 보고, AI 작업 세션 기록(정책이 허용하면), 작업 폴더의 작업 기록(`WORKSPACE.md`), 그리고 **이 체계 자신의 사용 기록**(트리아지 예측과 피드백).
-- **한 사건은 여러 객체에 연결된다**(이슈·MR·스레드·배포·문서). 여러 시스템에 걸친 업무에 단일 케이스 ID를 강제하면 왜곡이 생긴다 [van der Aalst 2019]. 객체 중심 이벤트 로그(OCEL) 형식이 참고 모델이다 [Ghahfarokhi 2021].
+- **한 사건은 여러 객체에 연결된다**(이슈·MR·스레드·배포·문서). 여러 시스템에 걸친 업무에 단일 케이스 ID를 강제하면 왜곡이 생긴다 [van der Aalst 2019a]. 객체 중심 이벤트 로그(OCEL) 형식이 참고 모델이다 [Ghahfarokhi 2021].
 - 저장하는 것: 출처·ID·링크·시각·행위자 **역할**·사건 종류·조인 키·결정론 수치·**기존 라벨**(트래커의 컴포넌트·라벨·에픽 — 비교 기준이 된다)·수집기 종류와 버전.
 - **수집기 종류**를 기록한다: `api · cli · mcp_sdk · llm_mediated`. 사내 시스템이 MCP로만 열려 있으면 LLM 없이 MCP 클라이언트로 직접 호출하는 스크립트(`mcp_sdk`)를 쓴다. 그것도 안 되는 소스는 `llm_mediated`로 표시하고 결정론 보장 밖으로 취급한다(통계에서 분리 표시).
 - 본문 텍스트는 원천 시스템에 둔다. 수집기가 빌드에 필요한 만큼만 발췌해 캐시(`data/excerpts.jsonl`)에 두고, 사람 이름은 역할로·비밀값은 지운 뒤 넘긴다. 캐시는 보존 기한으로 지운다.
@@ -166,6 +167,7 @@ L2 는 두 층이다(§0-9).
 | 처리 통계 | 트래커 라벨(유형·컴포넌트)별 소요 중앙·P90, 재오픈·후속 수정·중단 비율 | 맥락, 업무 지도 |
 | 실천과 결과 | 테스트도 바꿨나·AI 세션·커밋 수 등 관측된 실천이 있던 일과 없던 일의 문제율 — 연관만 | 업무 지도 |
 | 비슷한 과거 작업 | 이슈·커밋·프롬프트 텍스트의 TF-IDF 색인 → 비슷한 작업과 그것이 바꾼 파일 | 맥락, 훅(이슈 키) |
+| 업무 카테고리 | 사람이 정한 축(`method/categories.yaml`)으로 묶은 일마다 — 프로필, 끝난 일의 흐름(직접 이음 그래프, 재작업 고리, 가장 흔한 변형) [van der Aalst 2019b], 단계별 머문 시간, 참여자 순서, 관련 카테고리, 참조 사례, 접점. 흐름 그림이 그대로 담는 비율과 생략한 것을 같이 낸다 — 빈도로 거른 흐름 그림은 오해를 부른다 | 맥락(지금 단계 → 보통 다음), 업무 지도, 안내서, MCP |
 
 - 거의 모든 변경에 따라 바뀌는 장부 파일(changelog·빌드 매니페스트)은 뺀다. 넣으면 그것만 추천된다 `[실측]`.
 - 세대마다 이전 세대와 비교한다: 새로 생김·사라짐·강해짐·약해짐, 상위 집합 겹침. 이것도 메타다.
@@ -283,7 +285,7 @@ LLM이 내는 0~1 숫자는 보정되지 않은 값이라 임계치에 쓸 수 �
 | 사용 | 수시 | 새 업무 → 트리아지 브리프와 **예측 기록**. 끝나면 "도움 됨·안 됨·모름" 한 번 | 0~1분 | L0 사용 기록 |
 | 일일 표집 | 하루 1회 | "오늘 기록 없이 한 일" 한 줄(경험 표집). 회상 편향을 줄이려고 주간이 아니라 매일 묻는다 | 30초 | L0 자기 보고 |
 | 수확 | 주 1회, 무인 | `atlas collect all` → `atlas build`(WU 확정·열린 창 갱신·주장·카탈로그·업무 지도) → 예측 채점(원형·규모는 WU 종료 시 잠정, 함정·처리 수는 확정 시) → 주간 델타 + **확인 질문 5건 이내**(불확실·고영향 WU와 수신함 항목 통합) | 5~10분 | L0, L1, L2 |
-| 재빌드 | 월 1회 | 최근 12개월 창으로 L2·카드를 다시 만든다 + 무작위 15% 재주석 → 이전 세대와 diff + 지표 → 채택 시 태그 | 15~30분 | L2, L3 |
+| 재빌드 | 월 1회 | 최근 12개월 창으로 L2·카드를 다시 만든다 + 15% 재주석(`atlas llm stability annotate --share 0.15`) → 이전 세대와 diff + 지표 → 채택 시 태그 | 15~30분 | L2, L3 |
 | 재도출 | 분기 1회 또는 트리거 | 격리된 독립 도출 3~5회 → 합의 → 현행과 비교 → 코드북·레시피 개정 → 골든셋 평가 통과 시 채택 | 1~2시간 | 방법 |
 
 재도출 트리거: 지표 경고(§7.2), 프로젝트 국면 전환(개발 → 라이브, 시즌 구조 도입, 조직·담당 변화), 새 소스 추가, 레시피 대개정, 모델 교체.
@@ -343,7 +345,7 @@ LLM이 내는 0~1 숫자는 보정되지 않은 값이라 임계치에 쓸 수 �
 | 패싯별 unknown | 값이 unknown인 WU 비율 | 소스 공백 | A |
 | 근거 위반율 | 사후 검증에서 걸린 값 / 검사한 값 (R1~R4) | 주석이 근거를 지키는가 | A · `atlas validate` |
 | 코딩 일치도 | 블라인드 골든셋 기준 Krippendorff α, 원시 일치율, 신뢰구간 [Hayes & Krippendorff 2007] | 코드북 명확성 | B |
-| 재주석 불일치율 | 재빌드마다 무작위 15% WU를 캐시 없이 다시 주석했을 때 원형·패싯이 달라진 비율 | 주석 안정성 | B |
+| 재주석 불일치율 | 재빌드마다 주석한 WU 의 15%(세대마다 바뀌는 결정론 표본)를 캐시 없이 다시 주석했을 때 원형·패싯이 달라진 비율 | 주석 안정성 | B |
 | 구성 변화 | 새 WU 유입으로 바뀐 원형 분포 | 업무 자체의 변화 (오류 아님) | B |
 | 도출 안정성 | 격리 독립 도출에서 원형이 재현되는 비율 | 원형의 실체성 | B |
 | 잔차율 | `fit: weak` 또는 `residual` WU 비율 | 표류·신규 유형 | A |
@@ -397,7 +399,7 @@ LLM이 내는 0~1 숫자는 보정되지 않은 값이라 임계치에 쓸 수 �
 | MCP 서버 (`atlas mcp`, 선택) | Claude Code 밖의 MCP 클라이언트 | 같은 맥락을 읽기 전용 도구로 |
 | 작업 폴더 (`atlas work`, `WORKSPACE.md`) | 일 하나의 폴더에서 세션을 열 때 | 작업 CLAUDE.md 가 작업 기록과 맥락 파일(`@WORK.md` · `@CONTEXT.md`)을 가져온다. 맥락 파일이 없거나 낡은 폴더와 압축 뒤에는 SessionStart 훅이 넣는다. 끝낼 때 남긴 결과·회고가 다음 일의 맥락으로 돌아온다 |
 
-사람은 업무 지도(`atlas report`, HTML 한 장)와 카탈로그(`atlas catalog`)를 본다.
+사람은 업무 지도(HTML 한 장 — 카테고리 트리와 카테고리마다 흐름·순서·관계도·참조점·접점), 업무 안내서(같은 내용의 Markdown + Mermaid — 위키에 올린다), 주간 요약, 카탈로그를 본다. LLM 은 이 채널들에 해설·요약·초안을 더하되 근거 검증을 통과한 것만 싣는다. 채널 전체는 `CHANNELS.md`.
 
 ## 9. 사람–AI 분업: 위임 수준
 
@@ -432,15 +434,17 @@ work-atlas/  (사내 인스턴스)
 ├── CLAUDE.md · METHODOLOGY.md · BOOTSTRAP.md
 ├── atlas/                     엔진 (python -m atlas <명령>)          [git]
 │   ├── collect/                 git · jira · claude_code · workspace 수집기
-│   └── mine/                    동반 변경 · 핫스팟 · 처리 · 텍스트
+│   ├── mine/                    동반 변경 · 핫스팟 · 처리 · 텍스트 · 업무 카테고리
+│   └── llm/                     LLM 작업 — 검증 · 백엔드 · 작업 · 실행(캐시·장부·예산)
 ├── atlas.toml                 인스턴스 설정 (소스·키 패턴·마이닝 값) [git, 비밀값 없음]
 ├── tests/                     엔진 테스트 (합성 데이터)              [git]
 ├── method/                    ★ 정본: 방법                         [git]
 │   ├── codebook.yaml · schema.md · policy.md
+│   ├── categories.yaml          업무 카테고리 정의 (영역 · 국면 · 경로 규칙 · 접점 · 참조점)
 │   ├── observation.schema.json  관측 한 줄의 기계 계약
 │   ├── annotation.schema.json   주석 출력 계약 (codebook 에서 생성)
-│   ├── prompts/rederive.md      격리 재도출 프롬프트
-│   ├── recipes/                 사내에서 만드는 것: 주석(annotate)·카드·그 밖의 소스 수집기
+│   ├── prompts/                 격리 재도출 · LLM 작업(주석 · 카테고리 해설 · 주간 요약 · 초안 · 이름 제안) 프롬프트
+│   ├── recipes/                 사내에서 만드는 것: 카드 · 그 밖의 소스 수집기 · (필요하면) LLM 게이트웨이
 │   ├── skill/atlas/SKILL.md     사용 스킬 (개인 스킬 경로에 연결)
 │   ├── golden/                  골든셋 (블라인드 표시, 코드북 버전)
 │   └── DECISIONS.md             운영 중 방법 결정 (0단계에서 생성)
@@ -456,9 +460,9 @@ work-atlas/  (사내 인스턴스)
 | 요소 | 권장 | 근거·주의 |
 |---|---|---|
 | 저장 | 방법·집계는 git, 관측·WU는 사내 저장 경로(JSONL) + 임베디드 SQL 엔진(DuckDB 등) | 보존 정책 집행 가능 |
-| 엔진 | 제공·테스트됨: 수집(git·Jira DC/Cloud·Claude Code·작업 공간)·ingest·상관·마이닝·카탈로그·맥락·훅·MCP·업무 지도·평가·기록·사후 검증·입력 문서·채점·유사 사례. 사내에서 만듦: `annotate`(LLM) · `cards` · 그 밖의 소스 수집기 | 계약이 산문으로만 있으면 사내에서 다시 짜며 어긋난다. 실행 환경·사내 시스템에 묶인 것만 사내에 남긴다 |
+| 엔진 | 제공·테스트됨: 수집(git·Jira DC/Cloud·Claude Code·작업 공간)·ingest·상관·마이닝(업무 카테고리 포함)·카탈로그·맥락·훅·MCP·업무 지도·안내서·평가·기록·사후 검증·입력 문서·채점·유사 사례·LLM 작업(주석·해설·요약·초안·이름 제안 — 검증·캐시·장부·예산). 사내에서 정하거나 만듦: LLM 백엔드 승인(또는 게이트웨이) · `cards` · 그 밖의 소스 수집기 | 계약이 산문으로만 있으면 사내에서 다시 짜며 어긋난다. 실행 환경·사내 시스템에 묶인 것만 사내에 남긴다 |
 | 수집기 | `api`·`cli`·`mcp_sdk` 결정론 스크립트, 쓰기 전에 `check_observation` 통과(`atlas ingest` 가 집행). 불가하면 `llm_mediated`로 표시 | 재현성 |
-| LLM 단계 | Claude Code 헤드리스 `claude -p --output-format json --json-schema '<스키마 JSON>'` — 검증된 출력은 `structured_output`, 비용은 `total_cost_usd`에 담긴다 `[문서]` | 무인 실행은 `--permission-mode dontAsk`, 최소 `--allowedTools`, `--max-turns`, `--mcp-config` + `--strict-mcp-config`, `--max-budget-usd`로 범위를 닫는다 `[문서]` |
+| LLM 단계 | `atlas llm` 의 claude 백엔드: Claude Code 헤드리스 `claude --bare -p --output-format json --json-schema '<스키마 JSON>' --tools "" --strict-mcp-config --no-session-persistence --system-prompt … --max-budget-usd …` 를 빈 임시 폴더에서, 입력은 표준 입력으로 — 검증된 출력은 `structured_output`, 비용은 `total_cost_usd`에 담긴다 `[문서]`. 사내 게이트웨이는 command 백엔드 | 도구가 필요 없는 작업이라 도구를 모두 끄고 MCP 를 막는다. 도구를 쓰는 무인 실행(재도출 등)은 `--permission-mode dontAsk`, 최소 `--allowedTools`, `--max-turns` 로 범위를 닫는다 `[문서]` |
 | 밀폐 실행 | 재도출·주석은 `--bare`로 주변 설정(CLAUDE.md·스킬·훅·MCP·자동 메모리)을 차단 | `--bare`는 구독 로그인을 읽지 않는다. `ANTHROPIC_API_KEY` 또는 `--settings`의 `apiKeyHelper`, 또는 Bedrock·Vertex·Foundry 자격 증명이 필요하다 `[문서]`. 불가하면 Agent SDK에서 설정 로딩을 끄는 방식을 검토 `[미확인]` |
 | 생성물 보호 | 프로젝트 권한 deny `Edit(/out/**)`·`Edit(/data/**)` + 커밋 전 무결성 검사 | deny는 AI 편집 도구만 막는다. 사람·스크립트 편집은 검사로 탐지 `[문서]` |
 | 사용 | Claude Code 스킬 `atlas` (개인 `~/.claude/skills/` 또는 플러그인) + 훅(`PostToolUse`·`UserPromptSubmit` 의 `additionalContext`, 1만 자 상한) | 스킬은 설명만 상시 로드되고 본문은 호출 시 로드된다. 훅 출력은 시스템 알림으로 들어간다 `[문서]` |
@@ -506,10 +510,12 @@ work-atlas/  (사내 인스턴스)
   - 훅이 실제 세션에서 행동을 바꾸는지 `[미확인]` — 사내에서 판정(`atlas record`)으로 잰다.
 - Claude Code 기능은 2026-10-08 공식 문서 기준이다 `[문서]`. 루틴·자체 호스팅 환경은 프리뷰·베타라 바뀔 수 있다.
 - 회사 AI 사용 정책(메일·메신저·AI 세션 처리 허용 범위) `[미확인]`.
+- 실제 LLM 호출로 낸 카테고리 해설·주석·요약의 품질과 안정성 `[미확인]` — 엔진은 가짜 백엔드와 대화 세션 import 로만 시험했다. 사내에서 `atlas llm stability` 와 사람의 판정(`atlas record llm-feedback`)으로 잰다.
+- 업무 카테고리의 흐름·머문 시간이 사내 워크플로(상태가 많은 트래커)에서 읽기 쉬운지 `[미확인]` — 공개 데이터의 트래커는 상태가 단순하다.
 
 ## 참고문헌
 
-2026-10-08·12에 DOI 메타데이터·원문 페이지·검색 결과로 존재를 확인했다 `[문서]`.
+2026-10-08·12·13에 DOI 메타데이터·원문 페이지·검색 결과로 존재를 확인했다 `[문서]`.
 
 - Aamodt, A., Plaza, E. (1994). Case-Based Reasoning: Foundational Issues, Methodological Variations, and System Approaches. *AI Communications* 7(1):39–59. https://doi.org/10.3233/AIC-1994-7104
 - Bird, C. et al. (2009). Fair and Balanced? Bias in Bug-Fix Datasets. *ESEC/FSE 2009*, 121–130. https://doi.org/10.1145/1595696.1595716
@@ -530,7 +536,8 @@ work-atlas/  (사내 인스턴스)
 - Settles, B. (2009). Active Learning Literature Survey. UW–Madison TR 1648. https://minds.wisconsin.edu/handle/1793/60660
 - Śliwerski, J., Zimmermann, T., Zeller, A. (2005). When Do Changes Induce Fixes? *MSR 2005*, 1–5. https://doi.org/10.1145/1083142.1083147
 - Snowden, D.J., Boone, M.E. (2007). A Leader's Framework for Decision Making. *Harvard Business Review*, Nov 2007. https://hbr.org/2007/11/a-leaders-framework-for-decision-making
-- van der Aalst, W.M.P. (2019). Object-Centric Process Mining: Dealing with Divergence and Convergence in Event Data. *SEFM 2019*, LNCS 11724, 3–25. https://doi.org/10.1007/978-3-030-30446-1_1
+- van der Aalst, W.M.P. (2019a). Object-Centric Process Mining: Dealing with Divergence and Convergence in Event Data. *SEFM 2019*, LNCS 11724, 3–25. https://doi.org/10.1007/978-3-030-30446-1_1
+- van der Aalst, W.M.P. (2019b). A Practitioner's Guide to Process Mining: Limitations of the Directly-Follows Graph. *Procedia Computer Science* (CENTERIS/ProjMAN/HCist 2019). https://www.vdaalst.com/publications/p1101.pdf
 - Wu, R., Zhang, H., Kim, S., Cheung, S.-C. (2011). ReLink: Recovering Links between Bugs and Changes. *ESEC/FSE 2011*, 15–25. https://doi.org/10.1145/2025113.2025120
 - Xiao, Z. et al. (2023). Supporting Qualitative Analysis with Large Language Models: Combining Codebook with GPT-3 for Deductive Coding. *IUI '23 Companion*, 75–78. https://doi.org/10.1145/3581754.3584136
 - Zimmermann, T., Weißgerber, P., Diehl, S., Zeller, A. (2004). Mining Version Histories to Guide Software Changes. *ICSE 2004*, 563–572. https://doi.org/10.1109/ICSE.2004.1317478

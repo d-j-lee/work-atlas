@@ -9,9 +9,10 @@
 
 | 부분 | 상태 |
 |---|---|
-| 수집(git · Jira DC/Cloud · Claude Code · 작업 공간) · ingest · 상관 · 마이닝 · 카탈로그 · 맥락 · 훅 · MCP · 업무 지도 · 평가 · 기록 · 사후 검증 · 입력 문서 · 채점 · 유사 사례 | **엔진에 있다** (`atlas/`, 테스트됨, 공개 실데이터로 평가됨 — `EVALUATION.md`) |
+| 수집(git · Jira DC/Cloud · Claude Code · 작업 공간) · ingest · 상관 · 마이닝(업무 카테고리 포함) · 카탈로그 · 맥락 · 훅 · MCP · 업무 지도 · 업무 안내서 · 평가 · 기록 · 사후 검증 · 입력 문서 · 채점 · 유사 사례 · 점검(`atlas doctor`) | **엔진에 있다** (`atlas/`, 테스트됨, 공개 실데이터로 평가됨 — `EVALUATION.md`) |
+| LLM 작업 — 주석(`annotate`) · 카테고리 해설 · 주간 요약 · 이름 제안 · 작업 기록 초안 (`atlas llm`) | **엔진에 있다** — 근거 검증 · 캐시 · 장부 · 예산까지. **사내에서 정한다**: 어느 백엔드를 승인하나(Claude Code 헤드리스 · 사내 게이트웨이 · 없음), 그 인증(A0) |
 | 그 밖의 소스 수집기(메신저·메일·위키·배포·GitLab MR 등) | **사내에서 만든다** — 관측 계약에 맞는 JSONL 을 내서 `atlas ingest` 로 넣는다 |
-| 주석 `annotate`(LLM) · 원형 카드 `cards` | **사내에서 만든다** — LLM 실행 환경·인증에 묶여 있다(A3·A4) |
+| 원형 카드 `cards` | **사내에서 만든다** — 원형이 사내 도출(A3)에서 나온다(A4) |
 
 ## 준비 (10분)
 
@@ -20,6 +21,7 @@
 2. `pip install -e .` (Python 3.11 이상) — `atlas` 명령이 생긴다. MCP 서버를 쓸 거면 `pip install "mcp>=1.2"`.
 3. `git config core.hooksPath .githooks` — 커밋 전 무결성 검사를 켠다.
 4. `atlas check` 가 `integrity ok`, `python -m unittest discover -s tests` 가 전부 통과하는지 본다.
+5. `atlas doctor` — 환경 · 설정(소스 포함) · 방법 · 데이터 · 소비 · LLM 이 각각 되는지(ok), 권하는 것이 빠졌는지(!), 막혔는지(✗)와 다음 할 일을 본다. 단계마다 다시 돌린다.
 
 ---
 
@@ -39,7 +41,8 @@ A0 단계다. 아직 어떤 데이터도 수집하지 마라.
 1) 이 세션에서 닿을 수 있는 업무 시스템을 도구 목록·MCP 설정·설치된 CLI로 실측해 표로 보여줘
    (시스템, 접근 방식: API/CLI/MCP, 읽기·쓰기 범위, 인증 형태). 확인 못 한 칸은 [미확인].
 2) method/policy.md §1 의 빈칸 중 내가 답해야 하는 것만 한 번에 묶어 질문해라.
-   특히 data/ 를 둘 사내 저장 경로, Claude Code 대화 기록·Jira 본문을 처리해도 되는 범위, --bare 실행에 쓸 LLM 인증 형태.
+   특히 data/ 를 둘 사내 저장 경로, Claude Code 대화 기록·Jira 본문을 처리해도 되는 범위, --bare 실행에 쓸 LLM 인증 형태,
+   그리고 atlas llm 의 백엔드(none 그대로 · Claude Code 헤드리스 · 사내 게이트웨이) — 승인 전에는 none 이다.
 내 답을 받으면 policy.md §1 을 채우고, method/DECISIONS.md 를 만들어 첫 결정들을 한 줄씩 기록해라.
 ```
 
@@ -52,19 +55,22 @@ A1 단계(정찰 실측)다. 소스는 이슈 트래커와 형상관리 두 개�
 1) atlas.example.toml 을 atlas.toml 로 복사해 채워라:
    identity.self(내 git 이메일·Jira 사용자), keys.projects(사내 프로젝트 키), [[sources.git]], [[sources.jira]].
    자격 증명은 값이 아니라 환경 변수 이름만 적는다(auth_env). 정책이 허용하면 [[sources.claude_code]] 도.
+   identity.roles 에 역할(codebook roles 의 id) → 팀 메일·그룹 계정·도메인 패턴을 적는다 — 개인 이름은 적지 않는다.
+   수집할 때 적용되므로(지난 관측은 그대로) 첫 수집 전에 정한다. 업무 카테고리의 순서 그림과 접점의 "누가"가 여기서 나온다.
    이슈·업무마다 작업 폴더를 쓰고 있으면 [[sources.workspace]] 도 — 내가 쓴 파일이라 부담이 작고,
    그 폴더에서 연 세션이 이슈에 붙는다(켠 뒤 수집한 세션부터 — 이미 수집한 세션은 고치지 않는다).
    형식과 이유는 WORKSPACE.md. 기존 폴더는 그대로 두고 atlas work status 로 먼저 본다.
    트래커가 Jira 가 아니면 그 트래커의 수집기를 관측 계약(method/schema.md "제공 수집기가 내는 사건")에 맞춰 만들어
    JSONL 로 내고 atlas ingest 로 넣는다 — 이슈 생성 라벨은 생성 당시 값으로(변경 이력 되감기).
 2) atlas collect all --dry-run 으로 계약 위반이 0 인지 보고, 최근 14일로 시험한 뒤 문제가 없으면 실제로 수집해라.
-3) atlas build 후 atlas catalog 를 보여줘라. 커밋 이슈 키 커버리지·고아 비율·부분 수집을 읽고,
-   내가 최근 한 업무 5건(계획 기능·결함·운영 요청·긴급·문의)이 어떻게 이어졌는지 atlas context --issue 로 확인해라.
+3) atlas build 후 atlas catalog 를 보여줘라. 커밋 이슈 키 커버리지·고아 비율·부분 수집·업무 카테고리 미분류 비율을 읽고,
+   내가 최근 한 업무 5건(계획 기능·결함·운영 요청·긴급·문의)이 어떻게 이어졌는지 atlas context --issue 로 확인해라
+   (카테고리 줄 — 지금 단계 → 보통 다음 — 이 내 감각과 맞는지도).
 4) method/sources.yaml 에 소스별 측정값(수집기 종류·원천 보존 기한·키 커버리지·편향 메모)을 [실측]으로 남기고
    policy.md §2 표를 채운다 — 여기는 결정, sources.yaml 은 측정.
 ```
 
-종료 기준: 계약 위반 0 · 키 커버리지와 고아 비율이 수치로 있음 · 5건 종단 추적.
+종료 기준: 계약 위반 0 · 키 커버리지 · 고아 비율 · 미분류 비율이 수치로 있음 · 5건 종단 추적.
 
 ### A2. 백필 · 첫 효용 · 훅 · 블라인드 골든 (반나절)
 
@@ -81,12 +87,16 @@ A2 단계다.
    - 작업 공간(쓰는 경우): atlas work init 으로 루트에 공통 규칙을 두고, 새 일은 atlas work new <이슈 키>.
    - 사용 스킬: method/skill/atlas/SKILL.md 의 ATLAS_HOME 을 채우고 ~/.claude/skills/atlas 로 심볼릭 링크.
    - 업무 지도: atlas report 의 HTML 을 열어 본다(git 밖).
-4) 입력 문서(atlas render)를 만들고, 블라인드 골든 20건을 고른다(규모·기원이 고르게, 재오픈·롤백 흔적 포함).
+4) 업무 카테고리를 다듬는다(CHANNELS.md §2.4): 업무 지도의 카테고리 트리와 data/reports/guides/README.md 를 보고
+   경로 규칙 후보 · merge · parents 를 method/categories.yaml 에 제안해라 — 내가 고른 것만 넣고 바꾼 이유는 DECISIONS.md 에 한 줄.
+   자주 보는 카테고리 3~5개에 contacts(팀 · 채널 · 역할 — 사람 이름 금지)와 references(런북 · 설계 문서)를 내게 물어 채운다.
+   다시 빌드해 미분류 비율이 policy.uncategorized_max 아래인지 본다. 안내서는 atlas guide 로 위키에 올릴 Markdown 이 나온다.
+5) 입력 문서(atlas render)를 만들고, 블라인드 골든 20건을 고른다(규모·기원이 고르게, 재오픈·롤백 흔적 포함).
    먼저 나에게 입력 문서만 보여주고 트랙 A 패싯(codebook active_from: A) 라벨을 받는다.
    내 답을 받은 뒤에만 네 제안을 보여줘라. method/golden/labels.csv 에 blind=true, codebook_version 과 함께 기록한다.
 ```
 
-종료 기준: 평가 결과 기록 · 훅·스킬 켜짐 · 블라인드 골든 20건.
+종료 기준: 평가 결과 기록 · 훅·스킬 켜짐 · 카테고리 정의 첫 손질 · 블라인드 골든 20건.
 
 ### A3. 첫 도출 (2시간)
 
@@ -110,11 +120,12 @@ A3 단계(첫 원형 도출)다. METHODOLOGY.md §6.1 을 축소해서 한다.
 
 ```text
 A4 단계다. U1 트리아지의 의미 층을 붙인다.
-1) method/recipes/annotate.py: data/render 문서를 입력으로
-   claude --bare -p --output-format json --json-schema "$(cat method/annotation.schema.json)" 를 호출하고
-   structured_output 을 WU 의 annotation 에, 문서 해시를 build.input_hash 에 넣어 data/units/annotated.jsonl 로 쓴다.
-   캐시 키는 (input_hash, recipe, codebook_version, model). --max-budget-usd 로 실행마다 상한을 걸고 total_cost_usd 를 모은다.
-2) atlas build 가 해시가 같은 주석만 이어 붙이고 atlas validate 로 사후 검증한다(→ current.jsonl). 위반률을 보여줘라.
+1) 주석: A0 에서 승인한 백엔드를 atlas.toml [llm] 에 적고(예산 max_usd_* 포함 — policy.md §4) atlas llm run annotate --dry-run 으로
+   대상을 본 뒤 --limit 로 나눠 돌린다. 엔진이 입력 문서(atlas render 와 같은 것)와 코드북을 보내고, annotation.schema.json 으로
+   받아 data/units/annotated.jsonl 에 쓴다. 다시 주석할지는 입력 해시 · 레시피 · 코드북 버전 · 코드북 내용 · 프롬프트로 정한다.
+   백엔드가 아직 없으면 atlas llm prompt annotate --key <wu> 를 이 세션에 붙여 답을 받고 atlas llm import 로 들인다(같은 검증).
+2) atlas build 가 해시가 같은 주석만 이어 붙이고 atlas validate 로 사후 검증한다(→ current.jsonl). 위반률과
+   atlas llm status(통과율 · 거절 이유 · 비용)를 보여줘라. atlas llm stability annotate --sample 3 으로 재표집 일치도도 잰다(월간 재빌드에서는 --share 0.15).
 3) method/recipes/cards.py: 원형 카드를 out/cards/ 에 만든다. 형식은 METHODOLOGY.md §8.
    카드에는 어휘 id와 건수만 둔다(WU 링크 없음). 함정은 결정론 신호가 있는 것만. 처리 수별 결과는 data/model/claims.jsonl 의
    moves 주장(원형별 깔끔 종료·후속 문제 건수)을 쓴다. 마지막에 out/MANIFEST.json 을 쓴다.
@@ -136,9 +147,14 @@ A5 단계다. policy.md §1 의 실행 위치에 맞춰 주기 작업을 정의�
   Claude Code 대화 기록은 30일 뒤 지워지므로 수집 주기를 그보다 짧게 둔다.
 - 작업 정리(사람, 주 1회 몇 분): atlas work status 로 오래 방치된 작업·결과 없이 끝난 작업·트래커와 어긋난 상태를 보고
   atlas work close 로 맞춘다. 무인 수확은 작업 폴더를 읽기만 한다.
+- LLM(백엔드를 승인했으면): 주간 수확 뒤 atlas llm run weekly_digest 로 주간 요약을, 카테고리 모양이 바뀐 것만
+  atlas llm run category_card 로 다시 받는다(캐시가 나머지를 건너뛴다). 업무 지도 · 안내서의 해설을 읽다 틀린 것은
+  atlas record llm-feedback --key '<카테고리>' --verdict wrong 으로 내린다. 사람 판정이 10건 넘게 쌓이고 쓸모 있음 비율이
+  policy.llm_useful_min 이상이면 [llm] auto 에 넣어 빌드가 이어서 돌리게 한다.
 - 분기마다 atlas eval 을 다시 돌려 효용이 유지되는지 본다.
-- 월간 재빌드: 무작위 15% 재주석 포함 → out/ 교체 + 지표 표(원형 단위 집계는 reports/) → 내가 git tag gen-YYYY-MM 으로 채택.
-- 무인 호출은 --bare, --permission-mode dontAsk, 최소 --allowedTools, --max-turns, --max-budget-usd,
+- 월간 재빌드: 15% 재주석(atlas llm stability annotate --share 0.15) 포함 → out/ 교체 + 지표 표(원형 단위 집계는 reports/) → 내가 git tag gen-YYYY-MM 으로 채택.
+- atlas llm 의 claude 백엔드는 도구를 모두 끄고(--tools "") MCP 를 막은(--strict-mcp-config) 채 빈 임시 폴더에서 부른다.
+  도구가 필요한 무인 호출(재도출 등)은 --bare, --permission-mode dontAsk, 최소 --allowedTools, --max-turns, --max-budget-usd,
   필요하면 --mcp-config 와 --strict-mcp-config 로 범위를 닫는다. 원천 시스템에는 쓰지 않는다.
 - 알림: 정상·무변동은 침묵. 사람 결정이 필요한 것, 지표 경고, 실행 실패만 알린다.
 ```

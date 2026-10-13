@@ -30,6 +30,7 @@ from .common import REPO, glob_regex
 
 RECORD = "WORK.md"
 GENERATED = "CONTEXT.md"
+DRAFT = "WORK.draft.md"          # atlas llm run work_draft --write 가 쓰는 초안 — 사람이 WORK.md 로 옮긴다
 GENERATED_MARK = "<!-- atlas:generated"
 STATUSES = ("active", "waiting", "done", "dropped")
 OPEN_STATUSES = ("active", "waiting")
@@ -391,7 +392,7 @@ def inventory(src: Source, work_dir: Path, max_files: int = 5000) -> Inventory:
             low = rel.lower()
             if _SCRATCH(low) or low == ".git":
                 continue
-            if low == GENERATED.lower() and _is_generated(full):
+            if low in (GENERATED.lower(), DRAFT.lower()) and _is_generated(full):     # 생성물은 관측하지 않는다
                 continue
             if _SENSITIVE(name.lower()):
                 sensitive += 1

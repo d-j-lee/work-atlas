@@ -9,6 +9,8 @@
         같은 유형·컴포넌트의 처리 통계(소요 P50·P90 · 재오픈률)
   문장  비슷한 과거 작업과 그 파일 — 이슈 키가 없는 일도 찾는다
   작업  작업 폴더(WORK.md)의 키·제목·문제로 위를 찾는다. 비슷한 과거 작업에 그때의 작업 기록 위치를 붙인다
+  카테고리  이 일이 든 업무 카테고리(이슈·작업 폴더면 그대로, 문장뿐이면 비슷한 과거 작업들의 다수결로 '아마'):
+        요약 · 지금 단계와 보통 다음에 오는 것 · 가장 오래 머무는 단계 · 접점 · 참조할 사례 (data/model/categories.json)
 원칙: 숫자에는 건수를 붙이고, 연관을 인과로 말하지 않는다. 데이터 상태가 나쁘면(키 커버리지 등) 첫 줄에 밝힌다.
 앵커(이슈 키 등)는 이 출력 안에서만 쓴다 — 커밋·문서에 붙여 넣지 않는다(CLAUDE.md).
 """
@@ -33,6 +35,7 @@ class Model:
         self.p = p
         self.stale = False
         self._paths = self._text = self._claims = self._catalog = self._gen = None
+        self._cats: tuple | None = None
 
     def _json(self, name):
         try:
@@ -68,6 +71,15 @@ class Model:
             f = self.p.model / "claims.jsonl"
             self._claims = list(read_jsonl(f)) if f.exists() else []
         return self._claims
+
+    @property
+    def categories(self) -> dict | None:
+        if self._cats is None:
+            from . import catview
+            self._cats = catview.load(self.p)
+            if self._cats[1] and "옛 형식" in self._cats[1]:
+                self.stale = True
+        return self._cats[0]
 
     @property
     def catalog(self) -> dict:
@@ -209,6 +221,56 @@ def issue_info(model: Model, p, key: str) -> dict:
     return info
 
 
+def category_info(cm: dict, wu_id: str) -> dict | None:
+    """그 작업단위의 카테고리 — 흐름이 있는 가장 구체적인 칸과, 지금 단계에서 보통 다음에 오는 것."""
+    from . import catview
+    keys = catview.for_wu(cm, wu_id)
+    e = catview.best(cm, keys)
+    if not e:
+        return None
+    pos = (cm.get("open") or {}).get(wu_id)
+    refs = e.get("references") or {}
+    return {"key": e["key"], "name": e["name"], "summary": catview.summary(e), "basis_n": (e.get("basis") or {}).get("n"),
+            "stage": pos, "next": catview.next_steps(e, pos["stage"]) if pos else [],
+            "bottleneck": catview.bottleneck(e), "after_end": (e.get("after_end") or [])[:2],
+            "people": catview.people(e, 4, informative=True),
+            "cautionary": [x["wu_id"] for x in refs.get("cautionary", [])[:2] if x["wu_id"] != wu_id],
+            "representative": [x["wu_id"] for x in refs.get("representative", [])[:2] if x["wu_id"] != wu_id],
+            "curated": refs.get("curated", [])[:3],
+            "also": [cm["categories"][k]["name"] for k in keys                 # 이 칸의 영역·조상 말고 함께 든 영역
+                     if cm["categories"][k]["kind"] == "area" and k not in e["chain"] and k != e.get("area")][:3]}
+
+
+def category_guess(cm: dict, sims: list[dict]) -> dict | None:
+    """키 없는 일 — 비슷한 과거 작업들이 든 카테고리의 다수결. 과반일 때만 '아마'로 말한다."""
+    from . import catview
+    votes: dict[str, int] = {}
+    for s in sims:
+        e = catview.best(cm, catview.for_wu(cm, s["wu_id"]))
+        if e:
+            votes[e["key"]] = votes.get(e["key"], 0) + 1
+    if not votes or not sims:
+        return None
+    key, n = sorted(votes.items(), key=lambda x: (-x[1], x[0]))[0]
+    if n * 2 <= len(sims):
+        return None
+    info = category_info_by_key(cm, key)
+    info["guess"] = {"votes": n, "of": len(sims)}
+    return info
+
+
+def category_info_by_key(cm: dict, key: str) -> dict:
+    from . import catview
+    e = cm["categories"][key]
+    refs = e.get("references") or {}
+    return {"key": key, "name": e["name"], "summary": catview.summary(e), "stage": None, "next": [],
+            "bottleneck": catview.bottleneck(e), "after_end": (e.get("after_end") or [])[:2],
+            "people": catview.people(e, 4, informative=True),
+            "cautionary": [x["wu_id"] for x in refs.get("cautionary", [])[:2]],
+            "representative": [x["wu_id"] for x in refs.get("representative", [])[:2]],
+            "curated": refs.get("curated", [])[:3], "also": []}
+
+
 def build(p, cfg: dict, paths_: list[str] = (), issue: str | None = None, text: str | None = None,
           scope: str | None = None, cwd: str | None = None, work: str | None = None) -> dict:
     model = Model(p)
@@ -238,6 +300,18 @@ def build(p, cfg: dict, paths_: list[str] = (), issue: str | None = None, text: 
     elif text:
         out["similar"] = similar(model, text, exclude=exclude)
         out["likely_files"] = likely_files(similar(model, text, k=10, exclude=exclude, with_files=True))
+    target = f"wu:issue:{issue}" if issue else (f"wu:work:{here['id']}" if here and here.get("known") else None)
+    if target or out.get("similar"):
+        cm = model.categories
+        if cm:
+            cat = category_info(cm, target) if target else None
+            if not cat and out.get("similar") and not (out.get("issue") or {}).get("known"):
+                cat = category_guess(cm, out["similar"])
+            if cat:
+                meta = ((model.text or {}).get("meta") or {})
+                cat["anchors"] = {w: meta.get(w, {}).get("anchor", w).split(":", 1)[-1]
+                                  for w in cat["cautionary"] + cat["representative"]}
+                out["category"] = cat
     for item in [out.get("issue") or {}, *(out.get("similar") or [])]:
         item["work_paths"] = [x for x in (work_path(cfg, w, p.root) for w in item.get("works", [])) if x]
     return out
@@ -298,13 +372,16 @@ def render_md(ctx: dict, max_lines: int = 40) -> str:
                          f" · {'끝남 ' + iss['end'][:10] if iss.get('end') else '진행 중'}"
                          f"{' · 결과 ' + iss['outcome'] if iss.get('outcome') else ''}{_late(iss)}"
                          f"{'' if (wk or {}).get('known') else _records(iss)}")
-            pr = iss.get("process")
+            pr = iss.get("process") if not ctx.get("category") else None      # 카테고리 줄이 같은 것을 더 자세히 말한다
             if pr:
                 lines.append(f"  - 같은 {pr['group']} 처리 {pr['ended']}건: 소요 중앙 {_hours(pr['duration_h_p50'])}"
                              f" · P90 {_hours(pr['duration_h_p90'])} · 재오픈 {pr['reopen_rate']:.0%}"
                              if pr["reopen_rate"] is not None else f"  - 같은 {pr['group']} 처리 {pr['ended']}건")
         else:
             lines.append(f"- 이슈 {iss['key']}: 아직 관측되지 않았다(수집 전이거나 다른 트래커)")
+    cat = ctx.get("category")
+    if cat:
+        lines += category_lines(cat)
     sims = ctx.get("similar") or []
     if sims:
         lines.append("- 비슷한 과거 작업:")
@@ -322,6 +399,34 @@ def render_md(ctx: dict, max_lines: int = 40) -> str:
     if len(lines) > max_lines:
         lines = lines[: max_lines - 1] + [f"- …(줄 상한 {max_lines})"]
     return "\n".join(lines)
+
+
+def category_lines(cat: dict) -> list[str]:
+    from .diagram import dur, pct
+    head = "- 카테고리 " + (f"(아마 — 비슷한 작업 {cat['guess']['of']}건 중 {cat['guess']['votes']}건) " if cat.get("guess") else "")
+    out = [head + cat["summary"] + (f" · 함께 든 영역: {', '.join(cat['also'])}" if cat.get("also") else "")]
+    st = cat.get("stage")
+    if st:
+        nxt = " · ".join(f"{x['to']} {pct(x['share'])}" + (f"(중앙 {dur(x['gap_h_p50'])})" if x.get("gap_h_p50") is not None else "")
+                         + (" ↺" if x.get("loop") else "") for x in cat.get("next", []) if x["to"] != "(끝)")
+        out.append(f"  - 지금 단계 {st['stage']} ({st['since'][:10]}부터)" + (f" → 보통 다음: {nxt}" if nxt else ""))
+    bn = cat.get("bottleneck")
+    tail = []
+    if bn:
+        tail.append(f"가장 오래 머무는 단계 {bn['stage']}(중앙 {dur(bn['hours_p50'])})")
+    if cat.get("after_end"):
+        tail.append("끝난 뒤 " + " · ".join(f"{r['activity']} {pct(r['share'])}" for r in cat["after_end"]))
+    if tail:
+        out.append("  - " + " · ".join(tail))
+    if cat.get("people"):
+        out.append("  - 접점: " + " · ".join(cat["people"]))
+    anchors = cat.get("anchors") or {}
+    refs = [f"주의 {anchors.get(w, w.split(':')[-1])}" for w in cat.get("cautionary", [])] + \
+           [f"대표 {anchors.get(w, w.split(':')[-1])}" for w in cat.get("representative", [])] + \
+           [f"{x.get('title', '')} {x.get('url') or x.get('path') or ''}".strip() for x in cat.get("curated", [])]
+    if refs:
+        out.append("  - 참조: " + " · ".join(refs) + f" — 자세히: atlas guide --category '{cat['key']}'")
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:

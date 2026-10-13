@@ -8,6 +8,13 @@
 self = ["me@company.example", "me"]
 # 식별자를 공백으로 이은 문자열(이름이 맨 앞)에 건다. jenkins·hudson 은 사람 성과 겹쳐 이름 맨 앞·메일 주소만 본다
 bot_patterns = ["\\[bot\\]", "\\bbot\\b", "dependabot", "renovate", "^(jenkins|hudson)\\b", "\\b(jenkins|hudson)@", "github-actions", "gitlab-ci"]
+# 다른 사람을 역할로 남긴다 — 역할 id → 식별자 패턴(정규식, 대소문자 무시). 역할 id 는 codebook roles 의 것만(틀리면 명령이 멈춘다).
+# 팀 메일·그룹 계정·도메인 같은 묶음 패턴을 쓴다(개인 이름을 적지 않는다). 적은 순서대로 먼저 맞는 역할 — 좁은 것을 위에.
+# 업무 카테고리의 순서 그림과 접점(누가 어느 단계에 처음 나오나)이 이것으로 살아난다. 수집할 때 적용된다(지난 관측은 그대로).
+# [identity.roles]
+# qa = ["@qa\\.company\\.example$"]
+# ops_cs = ["@cs\\.company\\.example$"]
+# client_dev = ["@client\\.company\\.example$"]
 
 [keys]
 # 커밋 메시지·브랜치·프롬프트에서 이슈 키를 결정론적으로 뽑는 정규식.
@@ -82,6 +89,10 @@ key_coverage_min = 0.5          # 커밋 이슈 키 커버리지가 이보다 �
 stale_days = 8                  # 마지막 수집이 이보다 오래되면 경고 (주간 수확 기준)
 transcript_stale_days = 20      # Claude Code 최신 세션이 이보다 오래되면 경고 (원천은 30일 뒤 삭제)
 stale_work_days = 30            # 진행 중인 작업 폴더가 이보다 오래 손대지 않았으면 정리 제안 (atlas work status)
+uncategorized_max = 0.3         # 업무 카테고리 미분류 비율이 이보다 크면 정의 손질 제안
+llm_accept_min = 0.7            # LLM 출력의 근거 검증 통과율 (이번 달 호출 5건 이상에서)
+llm_useful_min = 0.6            # LLM 해설에 대한 사람 판정 중 '쓸모 있음' 비율 (판정 10건 이상에서)
+llm_budget_warn = 0.8           # LLM 월 예산의 이 비율을 넘으면 알림
 
 [mining]
 max_files_per_commit = 30       # 이보다 큰 커밋은 동반 변경에서 뺀다 (Zimmermann et al. 2004)
@@ -94,7 +105,28 @@ history_generations = 6         # 세대 비교를 위해 남겨 둘 이전 세�
 ignore_paths = ["**/CHANGELOG*", "**/CHANGES*", "**/changes.xml", "**/RELEASE-NOTES*", "**/NEWS*", "**/HISTORY*", "**/*.lock", "**/package-lock.json", "**/go.sum", "**/pom.xml", "**/build.gradle", "**/build.gradle.kts", "**/package.json", "**/version.txt", ".github/**", ".gitlab-ci.yml", "**/Jenkinsfile"]
 # 테스트 파일 — 사후 귀속에서 유발자로 보지 않고, 실천 특징 '테스트도 바꿨나'에 쓴다
 test_paths = ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*Test.*", "**/*Tests.*", "**/*_test.*", "**/test_*", "**/*.spec.*", "**/*.test.*"]
+# 업무 카테고리 — 무엇으로 묶을지는 method/categories.yaml, 여기는 계산의 문턱. 의미는 CHANNELS.md
+category_min_n = 5              # 흐름·순서·변형을 낼 최소 작업단위 수 (영역 × 국면 칸도 이보다 작으면 만들지 않는다)
+flow_min_share = 0.05           # 흐름 그림에 남길 활동·이음의 최소 비율 — 그림이 그대로 담는 비율과 생략한 수를 같이 낸다
+category_recent_days = 730      # 흐름은 최근 이 기간에 끝난 일로 (0 이면 끝난 일 전체)
+category_basis_min = 30         # 그 기간에 끝난 일이 이보다 적으면 가장 최근에 끝난 이만큼까지 넓힌다
 
 [context]
 max_lines = 40                  # Claude 맥락 출력의 최대 줄 수 — 맥락은 짧을수록 쓰인다
 hook_min_confidence = 0.5       # 편집 순간 자동으로 넣는 동반 변경 힌트의 최소 신뢰도
+
+[llm]
+# LLM 작업(atlas llm) — 해설 · 주간 요약 · 이름 제안 · 작업 기록 초안 · 주석. 원칙과 검증은 CHANNELS.md.
+# 기본은 none: 아무것도 보내지 않는다. 사내에서 승인한 백엔드만 켠다(method/policy.md §1). 승인 전에는
+# atlas llm prompt <작업> 을 대화 세션에 붙이고 답을 atlas llm import 로 들인다 — 같은 검증을 거친다.
+backend = "none"                # none · claude(Claude Code 헤드리스) · command(사내 게이트웨이)
+# model = ""                    # 비우면 백엔드 기본
+# bare = true                   # claude: --bare (밀폐 실행 — ANTHROPIC_API_KEY · apiKeyHelper · Bedrock/Vertex/Foundry 인증 필요)
+# claude_path = ""              # claude 실행 파일 (비우면 PATH)
+# command = ["company-llm-gateway", "--json"]   # command: 요청 JSON 을 표준 입력으로 받아 답 JSON 을 표준 출력으로 내는 명령
+# timeout_s = 300
+max_usd_per_call = 0.5          # 호출 하나의 상한 (claude 는 --max-budget-usd 로도 넘긴다)
+max_usd_per_run = 5.0           # atlas llm run · build 한 번의 상한
+max_usd_per_month = 50.0        # 달 합계 상한 — 장부(data/llm/ledger.jsonl)로 센다. 값을 모르는 호출은 호출 상한으로 센다
+# limit_per_run = 20            # 한 번에 새로 부를 대상 수 (캐시 적중은 세지 않는다)
+# auto = ["category_card"]      # atlas build 가 이어서 돌릴 작업. 사람 판정이 쌓이기 전에는 비워 둔다

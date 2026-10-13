@@ -8,7 +8,9 @@
   4. data/ 가 git 에 추적되고 있지 않은가 (관측·WU 단위 데이터는 git 밖 — 보존 정책 집행을 위해)
   5. 루트에 .template 이 있으면(공개 템플릿 저장소) 사내 인스턴스 유래 내용이 없는가
      — 추적 파일이 허용 목록 안에 있는가(허용 목록 방식: 새 파일은 의식적으로 추가해야 한다),
-       코드북의 원형·어휘·예시·도출 값이 비어 있는가, policy.md 가 빈칸 상태인가
+       코드북의 원형·어휘·예시·도출 값이 비어 있는가, policy.md 가 빈칸 상태인가,
+       카테고리 정의(categories.yaml)의 사람이 채우는 칸(경로·이름·접점·참조점…)이 비어 있는가
+  6. 카테고리 정의의 모양 — 정규식이 컴파일되는가, 접점·참조점에 정해진 칸만 있는가(사람 이름을 받을 칸이 없게)
 
 사용: python -m atlas check [--root …]      (.githooks/pre-commit 과 CI 가 호출)
 """
@@ -101,6 +103,7 @@ TEMPLATE_ALLOWED = [
     "WORKSPACE.md", "method/workspace/*.md",
     "method/annotation.schema.json", "method/observation.schema.json", "method/codebook.yaml",
     "method/policy.md", "method/schema.md", "method/prompts/*.md", "method/skill/atlas/SKILL.md",
+    "method/categories.yaml", "CHANNELS.md",
     "atlas/*.py", "atlas/**/*.py", "tests/*.py",
 ]
 
@@ -135,6 +138,10 @@ def check_example_config(leak: str) -> None:
             bad.append(f"workspace.root={src.get('root')}")
     if cfg.get("keys", {}).get("projects"):
         bad.append("keys.projects 가 채워져 있다")
+    for role, pats in (cfg.get("identity", {}).get("roles") or {}).items():
+        for pat in [pats] if isinstance(pats, str) else pats:
+            if ".example" not in str(pat):
+                bad.append(f"identity.roles.{role}={pat}")
     if bad:
         errors.append(f"atlas.example.toml 에 자리표시자가 아닌 값: {bad}. {leak}")
 
@@ -157,6 +164,13 @@ def check_template() -> None:
             if value.get("examples") or value.get("boundary"):
                 errors.append(f"codebook {facet['id']}.{value['id']} 에 예시·경계 사례가 있다. {leak}")
     check_example_config(leak)
+    from .taxonomy import human_entries, load_data
+    try:
+        filled = human_entries(load_data(ROOT))
+    except (yaml.YAMLError, ValueError) as e:
+        filled = [f"읽기 오류 {e}"]
+    if filled:
+        errors.append(f"categories.yaml 의 사람이 채우는 칸이 비어 있지 않다 {filled}. {leak}")
     policy = (ROOT / "method" / "policy.md").read_text(encoding="utf-8")
     if "policy_version: 0" not in policy or "______" not in policy:
         errors.append(f"policy.md 가 빈칸(______)·policy_version 0 상태가 아니다 — 사내 값이 채워진 것으로 보인다. {leak}")
@@ -167,6 +181,16 @@ def check_template() -> None:
         return
     for rel in sorted(r for r in set(tracked) if not template_allows(r)):
         errors.append(f"{rel} 는 템플릿 허용 목록에 없다. 일반화된 파일이면 atlas/check.py 의 TEMPLATE_ALLOWED 에 추가하고, 아니면 빼라")
+
+
+def check_categories() -> None:
+    from .taxonomy import load_data, problems
+    try:
+        found = problems(load_data(ROOT))
+    except (yaml.YAMLError, ValueError) as e:
+        found = [f"읽기 오류: {e}"]
+    for msg in found:
+        errors.append(f"method/categories.yaml: {msg}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -180,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
     warnings.clear()
     check_template()
     check_schema()
+    check_categories()
     check_build()
     check_overlays()
     check_data_untracked()

@@ -47,7 +47,7 @@
 관측하지 않는 것:
 - 버릴 것: `scratch/` · `tmp/` 와 편집기 흔적.
 - 도구 폴더: `node_modules` · `.venv` · `target` · `dist` · `.idea` 등. `dist/` 에 둔 산출물은 세지 않으니 `out/` 에 둔다.
-- atlas 가 만든 `CONTEXT.md`: 첫 줄의 `<!-- atlas:generated` 표시로 알아본다. 요약을 다시 요약하지 않기 위해서다(CLAUDE.md 규칙 4). 표시가 없는 `CONTEXT.md` 는 사람의 파일로 센다.
+- atlas 가 만든 `CONTEXT.md` · `WORK.draft.md`(LLM 작업 기록 초안 — `atlas llm run work_draft --write`): 첫 줄의 `<!-- atlas:generated` 표시로 알아본다. 요약을 다시 요약하지 않기 위해서다(CLAUDE.md 규칙 4). 표시가 없으면 사람의 파일로 센다. 초안은 사람이 읽고 고쳐 `WORK.md` 로 옮긴 뒤 지운다 — 옮긴 내용은 사람의 기록이라 관측된다.
 - 작업 폴더 안의 저장소 사본(`.git` 이 있는 폴더): 개수만 센다.
 - 비밀값으로 보이는 파일(`.env` · `*.pem` · `*.key` · `id_rsa*` · `*credentials*` …): 열지 않고 개수만 세어 경고로 올린다. 파일 이름으로만 가리므로 Keynote 의 `.key` 도 걸린다.
 
@@ -106,6 +106,7 @@ repos: [server]               # 이 일이 닿는 저장소 (atlas.toml 의 git 
 │   ├── WORK.md                작업 기록 — 정본
 │   ├── CLAUDE.md              @WORK.md · @CONTEXT.md 를 가져온다 (method/workspace/work.CLAUDE.md)
 │   ├── CONTEXT.md             atlas 가 만든 맥락 파일 — 고치지 않는다
+│   ├── WORK.draft.md          (선택) LLM 이 쓴 작업 기록 초안 — 사람이 WORK.md 로 옮기고 지운다
 │   ├── PLAN.md  DECISIONS.md  evidence/  out/  scratch/
 └── 20261013-cache-warmup/     키 없는 일도 같은 모양
 ```
