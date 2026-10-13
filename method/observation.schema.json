@@ -16,7 +16,7 @@
       "required": ["system", "instance", "collector_kind"],
       "properties": {
         "system": {
-          "enum": ["issue", "vcs", "ci_cd", "deploy", "wiki", "mail", "chat", "calendar", "monitor", "ai_session", "self_report", "atlas"]
+          "enum": ["issue", "vcs", "ci_cd", "deploy", "wiki", "mail", "chat", "calendar", "monitor", "ai_session", "workspace", "self_report", "atlas"]
         },
         "instance": { "type": "string" },
         "collector_kind": {

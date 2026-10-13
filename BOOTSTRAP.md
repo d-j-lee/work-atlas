@@ -9,7 +9,7 @@
 
 | 부분 | 상태 |
 |---|---|
-| 수집(git · Jira DC/Cloud · Claude Code) · ingest · 상관 · 마이닝 · 카탈로그 · 맥락 · 훅 · MCP · 업무 지도 · 평가 · 기록 · 사후 검증 · 입력 문서 · 채점 · 유사 사례 | **엔진에 있다** (`atlas/`, 테스트됨, 공개 실데이터로 평가됨 — `EVALUATION.md`) |
+| 수집(git · Jira DC/Cloud · Claude Code · 작업 공간) · ingest · 상관 · 마이닝 · 카탈로그 · 맥락 · 훅 · MCP · 업무 지도 · 평가 · 기록 · 사후 검증 · 입력 문서 · 채점 · 유사 사례 | **엔진에 있다** (`atlas/`, 테스트됨, 공개 실데이터로 평가됨 — `EVALUATION.md`) |
 | 그 밖의 소스 수집기(메신저·메일·위키·배포·GitLab MR 등) | **사내에서 만든다** — 관측 계약에 맞는 JSONL 을 내서 `atlas ingest` 로 넣는다 |
 | 주석 `annotate`(LLM) · 원형 카드 `cards` | **사내에서 만든다** — LLM 실행 환경·인증에 묶여 있다(A3·A4) |
 
@@ -52,6 +52,9 @@ A1 단계(정찰 실측)다. 소스는 이슈 트래커와 형상관리 두 개�
 1) atlas.example.toml 을 atlas.toml 로 복사해 채워라:
    identity.self(내 git 이메일·Jira 사용자), keys.projects(사내 프로젝트 키), [[sources.git]], [[sources.jira]].
    자격 증명은 값이 아니라 환경 변수 이름만 적는다(auth_env). 정책이 허용하면 [[sources.claude_code]] 도.
+   이슈·업무마다 작업 폴더를 쓰고 있으면 [[sources.workspace]] 도 — 내가 쓴 파일이라 부담이 작고,
+   그 폴더에서 연 세션이 이슈에 붙는다(켠 뒤 수집한 세션부터 — 이미 수집한 세션은 고치지 않는다).
+   형식과 이유는 WORKSPACE.md. 기존 폴더는 그대로 두고 atlas work status 로 먼저 본다.
    트래커가 Jira 가 아니면 그 트래커의 수집기를 관측 계약(method/schema.md "제공 수집기가 내는 사건")에 맞춰 만들어
    JSONL 로 내고 atlas ingest 로 넣는다 — 이슈 생성 라벨은 생성 당시 값으로(변경 이력 되감기).
 2) atlas collect all --dry-run 으로 계약 위반이 0 인지 보고, 최근 14일로 시험한 뒤 문제가 없으면 실제로 수집해라.
@@ -73,7 +76,9 @@ A2 단계다.
    결과를 EVALUATION.md 의 표와 같은 형식으로 보여주고, 기준선보다 유의하게 낫지 않은 기능은 소비 경로에서 끄자고 제안해라
    (policy.md §7 "마이닝 효용"). 결정은 DECISIONS.md 에 한 줄.
 3) 쓸모가 확인된 것만 켠다:
-   - 훅: atlas hook --print-settings 의 결과를 내 작업 저장소의 .claude/settings.json(또는 ~/.claude/settings.json) hooks 에 합친다.
+   - 훅: atlas hook --print-settings 의 결과를 ~/.claude/settings.json hooks 에 합친다(작업 폴더에서도 동작한다 —
+     프로젝트 설정은 상위 폴더에서 이어받지 않는다). 한 저장소에서만 쓰려면 그 저장소의 .claude/settings.json.
+   - 작업 공간(쓰는 경우): atlas work init 으로 루트에 공통 규칙을 두고, 새 일은 atlas work new <이슈 키>.
    - 사용 스킬: method/skill/atlas/SKILL.md 의 ATLAS_HOME 을 채우고 ~/.claude/skills/atlas 로 심볼릭 링크.
    - 업무 지도: atlas report 의 HTML 을 열어 본다(git 밖).
 4) 입력 문서(atlas render)를 만들고, 블라인드 골든 20건을 고른다(규모·기원이 고르게, 재오픈·롤백 흔적 포함).
@@ -129,6 +134,8 @@ A5 단계다. policy.md §1 의 실행 위치에 맞춰 주기 작업을 정의�
   3) data/reports/YYYY-MM-DD-harvest.md 를 쓴다(git 밖): 카탈로그 경고 · 세대 변화 · 확인 질문 5건 이내
      (불확실한 WU 와 수신함 제안을 합쳐서) · 4주 지난 수신함 항목.
   Claude Code 대화 기록은 30일 뒤 지워지므로 수집 주기를 그보다 짧게 둔다.
+- 작업 정리(사람, 주 1회 몇 분): atlas work status 로 오래 방치된 작업·결과 없이 끝난 작업·트래커와 어긋난 상태를 보고
+  atlas work close 로 맞춘다. 무인 수확은 작업 폴더를 읽기만 한다.
 - 분기마다 atlas eval 을 다시 돌려 효용이 유지되는지 본다.
 - 월간 재빌드: 무작위 15% 재주석 포함 → out/ 교체 + 지표 표(원형 단위 집계는 reports/) → 내가 git tag gen-YYYY-MM 으로 채택.
 - 무인 호출은 --bare, --permission-mode dontAsk, 최소 --allowedTools, --max-turns, --max-budget-usd,

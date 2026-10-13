@@ -1,7 +1,7 @@
 # work-atlas — AI 운영 규칙
 
 이 저장소는 현업의 업무 처리 지식(문제·처리·결과)을 관측해 다음 일의 트리아지·실행·사후 대응에 다시 쓰는 체계다.
-개념과 용어는 `CONCEPTS.md`, 왜 이렇게 생겼는지는 `METHODOLOGY.md`, 엔진 구조는 `ARCHITECTURE.md`, 효용 실측은 `EVALUATION.md`, 시작 절차는 `BOOTSTRAP.md`.
+개념과 용어는 `CONCEPTS.md`, 왜 이렇게 생겼는지는 `METHODOLOGY.md`, 엔진 구조는 `ARCHITECTURE.md`, 효용 실측은 `EVALUATION.md`, 시작 절차는 `BOOTSTRAP.md`, 작업 공간·작업 폴더는 `WORKSPACE.md`.
 사람이 정하는 수치의 정본은 `method/policy.md`, 엔진이 읽는 설정은 `atlas.toml`, 데이터 계약은 `method/schema.md`.
 
 > 루트에 `.template` 이 있으면 공개 템플릿 저장소다. 거기서는 일반화된 방법(`METHODOLOGY.md`·`method/`)만 다듬고, 사내 업무에서 유래한 내용(원형·어휘·예시·골든셋·결정기록·운영 데이터)은 넣지 않는다 — 무결성 검사가 거부한다.
@@ -41,3 +41,4 @@
 - 맥락의 수치는 건수와 함께 말하고, 연관을 인과로 말하지 않는다. 데이터 상태 경고(키 커버리지·고아·옛 형식)가 있으면 먼저 밝힌다.
 - 다른 저장소에서 작업할 때는 이 파일이 로드되지 않는다. 그때의 규칙은 사용 스킬 `method/skill/atlas/SKILL.md` 가 담는다.
 - 고칠 것이 보이면 고치지 말고 `inbox/YYYYMMDD-HHMM-<주제>.md` 로 남긴다. 수확 단계가 주간 질문으로 올린다.
+- `atlas work new · context · close` 는 사람의 작업 폴더에 쓰는 명령이다. 사람이 시키거나 그 작업을 하는 중일 때만 부르고, 작업 폴더를 옮기거나 지우지 않는다(`WORKSPACE.md`).

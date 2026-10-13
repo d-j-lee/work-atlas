@@ -11,7 +11,7 @@ from . import __version__
 
 COMMANDS: dict[str, tuple[str, str]] = {
     # 수집 → 상관
-    "collect": ("atlas.collect", "소스에서 관측을 모은다 (git · jira · claude-code)"),
+    "collect": ("atlas.collect", "소스에서 관측을 모은다 (git · jira · claude-code · workspace)"),
     "ingest": ("atlas.ingest", "외부 수집기가 낸 관측 JSONL 을 검증해 덧붙인다"),
     "stitch": ("atlas.stitch", "관측을 작업단위(WU)로 묶는다"),
     "render": ("atlas.render", "WU 입력 문서(LLM 이 읽는 유일한 입력)를 만든다"),
@@ -25,6 +25,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "hook": ("atlas.hook", "Claude Code 훅 — 프롬프트·파일 편집 순간에 맥락을 넣는다"),
     "report": ("atlas.report", "사람용 업무 지도(HTML 한 장)"),
     "similar": ("atlas.similar", "확정 WU 중 유사 사례"),
+    "work": ("atlas.workspace", "작업 폴더 — 새 작업 · 맥락 파일 · 종료 · 목록과 위생 (작업 공간)"),
     "record": ("atlas.record", "트리아지 예측·판정·자기 보고를 남긴다 (대화 세션의 유일한 쓰기 경로)"),
     "score": ("atlas.score", "예측 채점 — 최상위 효용 지표"),
     "mcp": ("atlas.mcp_server", "MCP 서버(stdio) — 선택 의존성 mcp 필요"),

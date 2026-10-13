@@ -5,6 +5,10 @@
       같은 세션에서 같은 파일은 한 번만 말한다. 신뢰도 hook_min_confidence 미만 동반 변경·low 핫스팟은 말하지 않는다.
   UserPromptSubmit
       프롬프트에 이슈 키가 있으면 그 이슈의 상태·비슷한 과거 작업·그 작업들이 바꾼 파일을 넣는다.
+  SessionStart (startup · clear · compact)
+      작업 폴더(설정된 작업 공간 안)에서 연 세션이면 그 작업의 맥락을 넣는다 — 작업 기록의 키·제목·문제로 찾는다.
+      작업 폴더의 CLAUDE.md 가 CONTEXT.md 를 가져오고(@CONTEXT.md) 그 파일이 지금 세대로 만든 것이면 넣지 않는다
+      — 같은 맥락을 두 번 넣지 않게. 압축 뒤(compact)에는 늘 넣는다: 가져온 파일이 압축 뒤 다시 읽히는지는 문서에 없다.
 
 규칙: 막지 않는다 — 어떤 오류에도 출력 없이 종료 코드 0 (오류는 data/state/hook-errors.log 에 한 줄).
 출력은 hookSpecificOutput.additionalContext (Claude Code 문서: 1만 자 상한) — 여기서는 1,500자 안팎으로 자른다.
@@ -94,6 +98,34 @@ def on_prompt(p, cfg: dict, event: dict) -> str | None:
     return "[work-atlas] " + context.render_md(ctx, max_lines=18)
 
 
+def on_session_start(p, cfg: dict, event: dict) -> str | None:
+    from . import context, workspace as wsmod
+    if event.get("source") not in (None, "startup", "clear", "compact"):     # resume·fork 는 대화에 이미 있다
+        return None
+    cwd = event.get("cwd")
+    loc = wsmod.locate(cwd, wsmod.sources(cfg, p.root)) if isinstance(cwd, str) and cwd else None
+    if not loc:
+        return None
+    src, work_dir, rel = loc
+    try:
+        imports = (work_dir / "CLAUDE.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        imports = ""
+    imported = any(x.strip().startswith(f"@{wsmod.GENERATED}") for x in imports.splitlines())
+    stamp = wsmod.generated_stamp(work_dir / wsmod.GENERATED) if imported else None
+    current = context.Model(p).generation.get("generation")
+    if imported and stamp and stamp == current and event.get("source") != "compact":
+        return None
+    ctx = context.build(p, cfg, work=str(work_dir))
+    iss = ctx.get("issue") or {}
+    if not ctx.get("similar") and not (iss.get("known") and (iss.get("title") or iss.get("labels"))):
+        return None                             # 이 폴더 자신 말고는 알려 줄 것이 없다
+    ctx["health"] = []
+    stale = (f"\n- CONTEXT.md 는 세대 {stamp} 로 만든 것이다 — 위가 지금 맥락이다(`atlas work context` 로 파일을 새로 만든다)"
+             if imported and stamp and stamp != current else "")
+    return "[work-atlas] " + context.render_md(ctx, max_lines=18) + stale
+
+
 def handle(event: dict, root: str | None = None) -> dict | None:
     from . import config as configmod
     from .common import paths
@@ -107,6 +139,8 @@ def handle(event: dict, root: str | None = None) -> dict | None:
         text = on_edit(p, cfg, event)
     elif name == "UserPromptSubmit":
         text = on_prompt(p, cfg, event)
+    elif name == "SessionStart":
+        text = on_session_start(p, cfg, event)
     if not text:
         return None
     if len(text) > LIMIT:
@@ -125,6 +159,7 @@ def settings_snippet(root: Path) -> dict:
         "PostToolUse": [{"matcher": "Edit|Write|MultiEdit|NotebookEdit",
                          "hooks": [{"type": "command", "command": cmd, "timeout": 10}]}],
         "UserPromptSubmit": [{"hooks": [{"type": "command", "command": cmd, "timeout": 10}]}],
+        "SessionStart": [{"matcher": "startup|clear|compact", "hooks": [{"type": "command", "command": cmd, "timeout": 10}]}],
     }}
 
 
@@ -138,7 +173,8 @@ def main(argv: list[str] | None = None) -> int:
         from .common import paths
         root = paths(argv[argv.index("--root") + 1] if "--root" in argv else None).root
         print(json.dumps(settings_snippet(root), ensure_ascii=False, indent=2))
-        print("\n# 작업 저장소의 .claude/settings.json(또는 ~/.claude/settings.json)의 hooks 에 합친다.", file=sys.stderr)
+        print("\n# ~/.claude/settings.json(모든 폴더에 적용 — 작업 폴더에서도 동작한다) 또는 작업 저장소의 .claude/settings.json 의 hooks 에 합친다."
+              "\n# 프로젝트 설정은 CLAUDE.md 와 달리 상위 폴더에서 이어받지 않는다.", file=sys.stderr)
         return 0
     root = argv[argv.index("--root") + 1] if "--root" in argv else None
     try:

@@ -41,3 +41,11 @@ description: 업무 링크·이슈 키·요청·장애 증상을 받았거나 �
 `atlas record` 가 종료 코드 2로 거부하면(코드북에 없는 id, 트리아지 없는 판정 등) 값을 고쳐 다시 부르고, 우회하지 않는다.
 카드·맥락 본문을 이 파일에 복사하지 않는다. 항상 명령으로 읽는다.
 파일을 고치는 순간의 힌트는 훅이 따로 넣는다(`atlas hook --print-settings`, BOOTSTRAP A2).
+
+## 작업 폴더에서
+
+작업 공간의 작업 폴더(`$ATLAS_HOME/WORKSPACE.md`)에서 일할 때:
+- 맥락은 `atlas context --root "$ATLAS_HOME" --work .` — 그 작업 기록의 키·제목·문제로 찾는다. 작업 CLAUDE.md 가 `@CONTEXT.md` 를 가져오면 이미 들어와 있으니 다시 부르지 않는다.
+- 비슷한 과거 작업에 기록 위치가 붙어 있으면 그 `WORK.md` 의 결과·회고를 먼저 읽는다. 브리프의 요점(조심할 파일·과거의 함정)은 이 작업의 `WORK.md` 처리에 한 줄로 남긴다.
+- 끝낼 때 `WORK.md` 의 결과·회고를 채우고 `atlas work close --root "$ATLAS_HOME"` 을 부른다. 예측을 남긴 일이면 그다음 판정 두 질문(위 6).
+- `CONTEXT.md` 는 생성물이다 — 고치지 않는다(`atlas work context` 로 다시 만든다). 작업 폴더를 옮기거나 지우지 않는다.

@@ -1,9 +1,10 @@
 """Claude Code 대화 기록 수집기 — 세션 하나가 관측 하나 (ai_session.session).
 
 AI 세션은 티켓 없이 한 일이 가장 많이 남는 곳이다(METHODOLOGY.md §10). 본문은 가져오지 않고 행동의 흔적만 센다.
-  keys     paths(편집한 파일, 저장소 루트 기준) · issue_keys(프롬프트·브랜치) · branches(브랜치 해시 키 — git 수집기와 같은 규칙)
+  keys     paths(편집한 파일, 그 파일이 든 저장소의 루트 기준) · issue_keys(프롬프트·브랜치)
+           · branches(브랜치 해시 키 — git 수집기와 같은 규칙) · works(세션을 연 작업 폴더의 작업 id — 작업 공간 수집기와 같은 규칙)
   metrics  prompts · turns · tool_calls · edits · reads · bash · test_runs · commits · tool_errors · web
-           · subagents · compactions · duration_min · unparsed_lines
+           · subagents · compactions · duration_min · unparsed_lines · work_edits(작업 공간 안 파일의 편집 — 코드 경로로 세지 않는다)
   발췌     첫 프롬프트만 (가린 뒤 300자). excerpt=false 로 끈다.
 - 기록 형식은 Claude Code 내부 형식이고 버전마다 바뀐다(공식 문서). 모르는 줄은 세고(unparsed_lines) 건너뛰며,
   그런 줄이 있으면 partial=true. 형식이 바뀌면 이 파일만 고친다.
@@ -21,9 +22,10 @@ import time
 from pathlib import Path
 
 from . import Result, branch_key, excerpt
+from .. import workspace as ws
 from ..common import now_iso
 
-COLLECTOR = "claude-code@1"
+COLLECTOR = "claude-code@2"
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 READ_TOOLS = {"Read", "Grep", "Glob", "LS"}
 WEB_TOOLS = {"WebFetch", "WebSearch"}
@@ -46,18 +48,58 @@ def source_from_args(args) -> dict | None:
     return None
 
 
-def _repo_root(cwd: str | None, cache: dict) -> str | None:
-    if not cwd:
+def _toplevel(directory: str | Path | None, cache: dict) -> str | None:
+    """그 폴더가 든 git 저장소의 루트(없으면 None). 같은 폴더는 한 번만 묻는다."""
+    if not directory:
         return None
-    if cwd not in cache:
-        root = None
-        if Path(cwd).is_dir():
-            out = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True,
+    key = ("top", str(directory))
+    if key not in cache:
+        top = None
+        if Path(directory).is_dir():
+            out = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True,
                                  text=True, encoding="utf-8", errors="replace")
             if out.returncode == 0 and out.stdout.strip():
-                root = out.stdout.strip()
-        cache[cwd] = root or cwd
-    return cache[cwd]
+                top = out.stdout.strip()
+        cache[key] = top
+    return cache[key]
+
+
+def _repo_root(cwd: str | None, cache: dict) -> str | None:
+    """세션 폴더의 저장소 루트, 저장소가 아니면 세션 폴더 자체."""
+    return (_toplevel(cwd, cache) or cwd) if cwd else None
+
+
+def _parent_dir(pth: Path) -> Path | None:
+    return next((d for d in pth.parents if d.is_dir()), None)
+
+
+def _file_root(path: str, cwd_root: str | None, cache: dict) -> str | None:
+    """세션 폴더가 저장소가 아닐 때(작업 폴더 등) 편집한 파일이 든 저장소의 루트 — --add-dir 로 고친 저장소 파일을
+    그 저장소 기준으로 남긴다. 어느 저장소에도 없으면 세션 폴더 기준(이전과 같다)."""
+    pth = Path(path)
+    if not pth.is_absolute():
+        return cwd_root
+    return _toplevel(_parent_dir(pth), cache) or cwd_root
+
+
+def _in_workspace(path: str, cwd: str | None, srcs, cache: dict) -> bool:
+    """작업 공간 안의 파일(작업 기록·근거 등)인가. 작업 폴더 안에 받아 둔 저장소 사본의 파일은 코드다 — 그 파일의
+    저장소 루트가 작업 공간 루트보다 안쪽이면 작업 공간 파일이 아니다(작업 공간 자체가 저장소인 경우는 작업 공간 파일)."""
+    if not srcs or not path:
+        return False
+    pth = Path(path) if Path(path).is_absolute() else Path(cwd or ".") / path
+    try:
+        pth = pth.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    for src in srcs:
+        try:
+            pth.relative_to(src.root)
+        except ValueError:
+            continue
+        top = _toplevel(_parent_dir(pth), cache)
+        return not (top and src.root in Path(top).resolve().parents)
+    return False
 
 
 def _relative(path: str, root: str | None) -> str | None:
@@ -85,9 +127,13 @@ def _prompt_text(content) -> str | None:
     return None
 
 
-def summarize(path: Path, patterns, git_cache: dict | None = None, keep_names: bool = False) -> dict | None:
-    """대화 기록 파일 하나 → 세션 요약 (해석 없음, 세기만)."""
+def summarize(path: Path, patterns, git_cache: dict | None = None, keep_names: bool = False, srcs=None,
+              ids: dict | None = None) -> dict | None:
+    """대화 기록 파일 하나 → 세션 요약 (해석 없음, 세기만).
+    srcs 는 작업 공간 소스(workspace.sources), ids 는 소스 이름 → workspace.work_ids (작업 공간 수집기와 같은 작업 id)."""
     git_cache = {} if git_cache is None else git_cache
+    srcs = srcs or []
+    ids = ids or {}
     m = {k: 0 for k in ("prompts", "turns", "tool_calls", "edits", "reads", "bash", "test_runs", "commits",
                         "tool_errors", "web", "compactions", "unparsed_lines")}
     times, edited, prompts, branches = [], [], [], []
@@ -152,10 +198,22 @@ def summarize(path: Path, patterns, git_cache: dict | None = None, keep_names: b
                         m["commits"] += bool(COMMIT_CMD.search(cmd))
     if not session_id or not times:
         return None
-    root = _repo_root(cwd, git_cache)
+    git_root = _toplevel(cwd, git_cache)
+    root = git_root or cwd
+    works = []
+    loc = ws.locate(cwd, srcs) if cwd and srcs else None
+    if loc:
+        src, wdir, wrel = loc
+        works.append(src.object_id(ids.get(src.name, {}).get(wrel) or ws.work_id(src, wdir, wrel)))
     paths: dict[str, None] = {}
+    m["work_edits"] = 0
     for fp in edited:
-        rel = _relative(fp, root)
+        if _in_workspace(fp, cwd, srcs, git_cache):  # 작업 기록·근거 파일은 코드가 아니다 — 경로 겹침 연결에 섞지 않는다
+            m["work_edits"] += 1
+            continue
+        # 저장소에서 연 세션은 그 저장소의 파일만(이전과 같다 — 경로에 저장소 구분이 없어 남의 저장소 파일이 엉뚱하게 겹치지 않게).
+        # 저장소가 아닌 폴더(작업 폴더)에서 연 세션은 파일마다 그 파일의 저장소 기준.
+        rel = _relative(fp, root if git_root else _file_root(fp, root, git_cache))
         if rel:
             paths.setdefault(rel, None)
     sub = path.with_suffix("") / "subagents"
@@ -163,7 +221,7 @@ def summarize(path: Path, patterns, git_cache: dict | None = None, keep_names: b
     m["duration_min"] = round((max(times) - min(times)).total_seconds() / 60, 1)
     return {"session_id": session_id, "start": min(times), "n_lines": n_lines, "metrics": m,
             "paths": list(paths), "branches": list(dict.fromkeys(branch_key(b, keep_names) for b in branches)),
-            "prompts": prompts, "issue_keys": patterns.issue_keys(*prompts, *branches)}
+            "prompts": prompts, "issue_keys": patterns.issue_keys(*prompts, *branches), "works": works}
 
 
 def collect(p, cfg: dict, source: dict, patterns, state: dict) -> Result:
@@ -179,6 +237,8 @@ def collect(p, cfg: dict, source: dict, patterns, state: dict) -> Result:
     collected_at = now_iso()
     seen = dict(state.get("seen", {}))
     git_cache: dict = {}
+    srcs = ws.sources(cfg, p.root)
+    ids = {src.name: ws.work_ids(src) for src in srcs}
     skipped_active = 0
     oldest = None
     for project in sorted(d for d in base.iterdir() if d.is_dir()):
@@ -192,7 +252,7 @@ def collect(p, cfg: dict, source: dict, patterns, state: dict) -> Result:
             sig = f"{stat.st_size}:{int(stat.st_mtime)}"
             if seen.get(str(path)) == sig:
                 continue
-            s = summarize(path, patterns, git_cache, bool(source.get("keep_branch_names", False)))
+            s = summarize(path, patterns, git_cache, bool(source.get("keep_branch_names", False)), srcs, ids)
             seen[str(path)] = sig
             if not s:
                 continue
@@ -206,7 +266,7 @@ def collect(p, cfg: dict, source: dict, patterns, state: dict) -> Result:
                 "actor_role": "self",
                 "objects": [{"type": "ai_session", "id": s["session_id"]}],
                 "keys": {k: v for k, v in (("paths", s["paths"]), ("issue_keys", s["issue_keys"]),
-                                            ("branches", s["branches"])) if v},
+                                            ("branches", s["branches"]), ("works", s["works"])) if v},
                 "metrics": s["metrics"],
                 "excerpt_ref": None,
                 "partial": s["metrics"]["unparsed_lines"] > 0,

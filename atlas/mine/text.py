@@ -2,7 +2,7 @@
 
 토큰: 영문 식별자는 소문자 통째 + camelCase·snake_case 조각(3자 이상), 한글은 음절 바이그램
 (형태소 분석기 없이 한국어 검색에 흔히 쓰는 방식), 숫자·이슈 키·2자 미만은 버린다.
-문서 = WU 의 이슈 요약·설명 발췌, 커밋 메시지, AI 세션 첫 프롬프트(발췌 캐시에 있는 만큼).
+문서 = WU 의 이슈 요약·설명 발췌, 작업 기록(제목·문제·결과·회고·처리와 첫 결정 기록), 커밋 메시지, AI 세션 첫 프롬프트(발췌 캐시에 있는 만큼).
 색인은 WU 단위 근거라 data/model/ 에만 둔다.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import math
 import re
 from collections import Counter
 
-RECIPE = "text@1"
+RECIPE = "text@2"
 WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]*|[가-힣]+")
 CAMEL = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 STOP = set("""a an and are as at be by can could do does for from has have how i if in into is it its may might
@@ -85,8 +85,11 @@ class Index:
         return [t for t, _ in sorted(self.vecs.get(doc, {}).items(), key=lambda x: (-x[1], x[0]))[:k]]
 
 
+ORDER = {"issue.created": 0, "workspace.snapshot": 1, "vcs.commit": 2, "vcs.merge": 2, "ai_session.session": 2}
+
+
 def wu_texts(units: list[dict], obs_by_id: dict, excerpts: dict[str, str], chars: int = 1500) -> dict[str, str]:
-    """WU → 색인할 텍스트. 이슈 생성 발췌가 있으면 그것을 앞에, 없으면 커밋 메시지·세션 프롬프트."""
+    """WU → 색인할 텍스트. 이슈 생성 발췌 → 작업 기록 → 커밋 메시지·세션 프롬프트 순(앞부분이 상한 안에 남는다)."""
     out = {}
     for u in units:
         parts = []
@@ -94,10 +97,10 @@ def wu_texts(units: list[dict], obs_by_id: dict, excerpts: dict[str, str], chars
             o = obs_by_id.get(m["obs_id"])
             if not o or m.get("link") != "key":
                 continue
-            if o["kind"] in ("issue.created", "vcs.commit", "vcs.merge", "ai_session.session"):
+            if o["kind"] in ORDER:
                 t = excerpts.get(o["obs_id"])
                 if t:
-                    parts.append((0 if o["kind"] == "issue.created" else 1, o["ts"], t))
+                    parts.append((ORDER[o["kind"]], o["ts"], t))
         if parts:
             parts.sort()
             out[u["wu_id"]] = "\n".join(t for _, _, t in parts)[:chars]

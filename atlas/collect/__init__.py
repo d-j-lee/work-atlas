@@ -29,6 +29,7 @@ COLLECTORS = {
     "git": ("atlas.collect.git", "git"),
     "jira": ("atlas.collect.jira", "jira"),
     "claude-code": ("atlas.collect.claude_code", "claude_code"),
+    "workspace": ("atlas.collect.workspace", "workspace"),
 }
 
 
@@ -148,12 +149,16 @@ def branch_key(name: str, keep_names: bool = False, remote_tracking: bool = Fals
     return "b:" + hashlib.sha256(n.encode("utf-8")).hexdigest()[:12]
 
 
+HOME_PATH = re.compile(r"(?<![\w.-])(?:/Users|/home)/[^/\s]+|(?<![\w.-])[A-Za-z]:\\Users\\[^\\\s]+", re.I)
+
+
 def excerpt(text: str | None, limit: int = 1000) -> str:
     """발췌 캐시에 넣을 본문: 길이를 먼저 자르고(가림 비용 상한) 비밀값·연락처를 가린 뒤 다시 자른다.
 
     가림은 안전망이다 — 1차 방어는 '필요한 만큼만 발췌'다. 사람 이름은 본문에서 기계적으로 지울 수 없으므로
     발췌 상한을 짧게 두고, 정책이 본문 처리를 허용하지 않는 소스는 excerpt=false 로 끈다.
+    홈 폴더 경로(/Users/<계정>·/home/<계정>·C:\\Users\\<계정>)는 계정 이름이 들어 있어 '~' 로 바꾼다 — 기계적으로 지울 수 있는 이름이다.
     """
     from ..render import mask
-    text = mask((text or "")[: limit * 4]).strip()
+    text = mask(HOME_PATH.sub("~", (text or "")[: limit * 4])).strip()
     return text if len(text) <= limit else text[:limit] + "…"

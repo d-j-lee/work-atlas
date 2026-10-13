@@ -55,6 +55,17 @@ include = ["server-repo"]       # 프로젝트 폴더 이름에 이 문자열이
 # excerpt_chars = 300
 # Claude Code 는 대화 기록을 기본 30일 뒤 지운다(cleanupPeriodDays). 수집은 그보다 자주 돌린다.
 
+[[sources.workspace]]
+name = "ws"                     # 작업 공간을 부를 이름 — 작업 id 앞에 붙는다(ws:<id>). 바꾸면 지난 관측·세션과 이어지지 않는다
+root = "/path/to/work"          # 일 하나에 폴더 하나를 두는 곳(절대 경로, 또는 인스턴스 루트 기준). 형식과 이유는 WORKSPACE.md
+# depth = 1                     # 작업 폴더의 깊이. 팀/ABC-123 처럼 한 단계 묶으면 2. WORK.md 가 있는 폴더는 깊이와 무관하게 작업이다
+# record = "WORK.md"            # 작업 기록 파일 이름
+# excerpt = true                # 작업 기록(제목·문제·결과·회고·처리)과 첫 결정 기록의 발췌를 남길지
+# excerpt_chars = 1500
+# max_files = 5000              # 작업 폴더 하나에서 셀 파일 상한. 넘으면 partial
+# [sources.workspace.roles]     # 파일 역할의 이름 규칙을 바꿀 때만 (기본은 atlas/workspace.py 의 ROLES)
+# evidence = ["evidence/**", "**/*.log"]
+
 [stitch]
 max_issue_keys = 3              # 이보다 많은 이슈 키를 단 커밋은 조인하지 않는다 (릴리스·일괄 커밋)
 session_link_hours = 12         # AI 세션이 끝나고 이 시간 안의 커밋을 경로 겹침으로 잇는다 (확률 연결)
@@ -70,6 +81,7 @@ orphan_ratio_max = 0.2          # 고아 관측 비율이 이보다 크면 경�
 key_coverage_min = 0.5          # 커밋 이슈 키 커버리지가 이보다 작으면 습관 제안
 stale_days = 8                  # 마지막 수집이 이보다 오래되면 경고 (주간 수확 기준)
 transcript_stale_days = 20      # Claude Code 최신 세션이 이보다 오래되면 경고 (원천은 30일 뒤 삭제)
+stale_work_days = 30            # 진행 중인 작업 폴더가 이보다 오래 손대지 않았으면 정리 제안 (atlas work status)
 
 [mining]
 max_files_per_commit = 30       # 이보다 큰 커밋은 동반 변경에서 뺀다 (Zimmermann et al. 2004)

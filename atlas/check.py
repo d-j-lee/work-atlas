@@ -98,6 +98,7 @@ TEMPLATE_ALLOWED = [
     ".claude/settings.json", ".gitattributes", ".githooks/pre-commit", ".github/workflows/*.yml",
     ".gitignore", ".template", "LICENSE", "requirements.txt", "pyproject.toml", "atlas.example.toml",
     "README.md", "CONCEPTS.md", "METHODOLOGY.md", "ARCHITECTURE.md", "BOOTSTRAP.md", "CLAUDE.md", "CHANGELOG.md", "EVALUATION.md",
+    "WORKSPACE.md", "method/workspace/*.md",
     "method/annotation.schema.json", "method/observation.schema.json", "method/codebook.yaml",
     "method/policy.md", "method/schema.md", "method/prompts/*.md", "method/skill/atlas/SKILL.md",
     "atlas/*.py", "atlas/**/*.py", "tests/*.py",
@@ -129,6 +130,9 @@ def check_example_config(leak: str) -> None:
     for src in cfg.get("sources", {}).get("git", []):
         if not str(src.get("path", "")).startswith("/path/to/"):
             bad.append(f"git.path={src.get('path')}")
+    for src in cfg.get("sources", {}).get("workspace", []):
+        if not str(src.get("root", "")).startswith("/path/to/"):
+            bad.append(f"workspace.root={src.get('root')}")
     if cfg.get("keys", {}).get("projects"):
         bad.append("keys.projects 가 채워져 있다")
     if bad:

@@ -5,7 +5,10 @@
   1. 이슈 사건            → issue:<키> WU                                   key · high
   2. 커밋의 이슈 키(≤N개) → 그 이슈 WU                                       key · high
   3. MR·머지 묶음         → 묶음 안 커밋·머지가 가진 키 합집합의 이슈 WU. 키가 없으면 mr:/merge: WU  key · high
+  3b. 작업 폴더(최신 스냅숏) → front-matter·폴더 이름의 키의 이슈 WU. 키가 없으면 work:<작업> WU   key · high
   4. AI 세션의 키         → 그 이슈 WU (프롬프트·브랜치에 키)                key · high
+     세션을 연 작업 폴더  → 그 작업이 속한 WU (위 3b)                         key · high
+       (키 없는 작업 폴더면 아래 경로 겹침도 본다 — 아무 데도 안 붙은 커밋은 그 work: WU 로)
      세션 브랜치 = 머지 브랜치 → 그 묶음의 WU                               key · medium
      세션 끝 + session_link_hours 안의 커밋과 경로 겹침 → 그 커밋의 WU      probabilistic · low/medium
      어디에도 안 이어지면 편집이 있거나 프롬프트가 충분할 때 ai_session:<id> WU
@@ -21,6 +24,9 @@
                   문서 작업(제목이 keys.fix_exclude 에 걸림)은 유발자·수정 어느 쪽도 아니다.
                   줄 수준 blame 이 아니라 근사다 — 뒤엉킨 변경에 약하고, 실데이터 표본 감사 정밀도가 낮다(EVALUATION.md).
 결과(outcome, 코드북 computed 패싯): rolled_back > followup_fix > reopened > abandoned > clean. 끝나지 않았으면 없음.
+트래커 상태가 없는 WU 에 상태를 적은 작업 기록이 있으면 기간·상태는 그것을 따른다(end_basis "work"): 시작 = started,
+끝 = status 가 done·dropped 일 때 closed(없으면 그 스냅숏 시각), dropped 는 abandoned. 트래커가 있으면 트래커가 정본이고,
+상태를 적지 않은 폴더(기록 없음)는 다른 WU 처럼 마지막 활동으로 끝을 잡는다.
 신호·결과에는 열린 창(종료 + open_window_days) 안에서 **관측된** 사후 사건만 쓴다(재오픈·되돌림 시각, 연결이 만들어진 시각).
 창이 지나면 확정(settled)이고 이슈 상태를 얼린다 — 그 뒤의 재오픈은 late_reopens 로 세기만 한다. 그래서 확정 결과는 바뀌지 않는다.
 followup_fix_wus 는 연결된 모든 후속 수정(사실)이고, 신호는 그중 창 안에서 관측된 것만이다.
@@ -42,7 +48,7 @@ from pathlib import Path
 from . import config as configmod
 from .common import parse_ts, path_filter, paths, read_jsonl, read_observations, write_jsonl, write_text
 
-RECIPE = "stitch@1"
+RECIPE = "stitch@2"
 STRENGTH = {"high": 3, "medium": 2, "low": 1}
 INDUCER_PHRASES = re.compile(r"^is (caused|broken) by$", re.I)      # 대상이 유발자
 INDUCES_PHRASES = re.compile(r"^(causes|breaks)$", re.I)            # 이 이슈가 유발자
@@ -64,6 +70,52 @@ def latest_sessions(observations: list[dict]) -> list[dict]:
         if cur is None or (n, o["collected_at"]) > cur[0]:
             best[sid] = ((n, o["collected_at"]), o)
     return [v[1] for v in best.values()]
+
+
+def latest_snapshots(observations: list[dict], as_of: dt.datetime | None = None) -> list[dict]:
+    """작업 폴더는 내용이 바뀔 때마다 다시 관측된다 — 작업별로 가장 나중에 수집한 스냅숏 하나만 쓴다.
+    as_of 가 있으면 그때까지 **수집한** 것만 본다. 스냅숏의 ts 는 파일 수정 시각이라, 옮겨 온 파일(수정 시각이 옛날)이
+    든 나중 스냅숏이 과거로 새지 않게 하려면 수집 시각으로 거른다."""
+    best: dict[str, tuple] = {}
+    for o in observations:
+        if o["kind"] != "workspace.snapshot" or not o.get("objects"):
+            continue
+        if as_of and parse_ts(o["collected_at"]) > as_of:
+            continue
+        wid = o["objects"][0]["id"]
+        rank = (parse_ts(o["collected_at"]), parse_ts(o["ts"]), o["obs_id"])
+        if wid not in best or rank > best[wid][0]:
+            best[wid] = (rank, o)
+    return [v[1] for v in best.values()]
+
+
+def _day(value: str, ref: dt.datetime, end: bool = False) -> dt.datetime | None:
+    """front-matter 날짜(YYYY-MM-DD) → 그 날의 시작(또는 끝) — 스냅숏 시각의 시간대로."""
+    try:
+        d = dt.date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+    t = dt.time(23, 59, 59) if end else dt.time(0, 0, 0)
+    return dt.datetime.combine(d, t, tzinfo=ref.tzinfo)
+
+
+def work_span(snaps: list[dict], start: dt.datetime) -> tuple[dt.datetime, dt.datetime | None, str | None]:
+    """작업 기록의 기간과 상태 (시작, 끝 또는 None=진행 중, 대표 상태). 여러 작업이면 모두 끝나야 끝이다."""
+    statuses, ends = [], []
+    for s in snaps:
+        ref = parse_ts(s["ts"])
+        lab = s.get("labels", {})
+        started = _day(lab.get("started", [""])[0], ref)
+        if started and started < start:
+            start = started
+        status = (lab.get("status") or [""])[0]
+        statuses.append(status)
+        if status in ("done", "dropped"):           # 적힌 종료일이 그 스냅숏보다 뒤일 수는 없다 — 미래로 새지 않게
+            ends.append(min(_day(lab.get("closed", [""])[0], ref, end=True) or ref, ref))
+    done = statuses and all(x in ("done", "dropped") for x in statuses)
+    end = max(max(ends), start) if done else None
+    status = "dropped" if done and all(x == "dropped" for x in statuses) else (statuses[0] if len(set(statuses)) == 1 else None)
+    return start, end, status
 
 
 def replay_issue(events: list[dict], as_of: dt.datetime | None = None, window: dt.timedelta | None = None) -> dict:
@@ -160,8 +212,9 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
            if o["source"]["system"] not in ("atlas", "self_report") and parse_ts(o["ts"]) <= as_of]
     by_id = {o["obs_id"]: o for o in obs}
     sessions = latest_sessions(obs)
-    session_ids = {s["obs_id"] for s in sessions}
-    obs = [o for o in obs if o["kind"] != "ai_session.session" or o["obs_id"] in session_ids]
+    snaps = latest_snapshots(obs, as_of)
+    current = {s["obs_id"] for s in sessions} | {s["obs_id"] for s in snaps}
+    obs = [o for o in obs if o["kind"] not in ("ai_session.session", "workspace.snapshot") or o["obs_id"] in current]
     commits = [o for o in obs if o["kind"] in ("vcs.commit", "vcs.merge")]
     sha_index: dict[tuple[str, str], str] = {}
     for c in commits:
@@ -217,6 +270,14 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
             for b in g["branches"]:
                 branch_anchor[b].add(a)
 
+    # 3b. 작업 폴더 — 선언된 키(없으면 폴더 이름의 키)의 이슈 WU, 키가 없으면 그 작업 자신이 앵커다(티켓 없이 한 일)
+    work_anchor: dict[str, list[str]] = {}
+    for s in snaps:
+        obj = s["objects"][0]["id"]
+        work_anchor[obj] = [f"issue:{k}" for k in keys_of(s)] or [f"work:{obj}"]
+        for a in work_anchor[obj]:
+            units.add(a, s["obs_id"], "key", "high", ["work"])
+
     # 4. AI 세션
     commit_anchor = units.anchors_of()
     commit_times = sorted((parse_ts(c["ts"]), c["obs_id"]) for c in commits if c["kind"] == "vcs.commit")
@@ -228,9 +289,14 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
         end = start + dt.timedelta(minutes=float(s["metrics"].get("duration_min", 0)))
         session_end[s["obs_id"]] = end
         keys = keys_of(s)
+        in_work = [a for w in s["keys"].get("works", []) for a in work_anchor.get(w, ())]
+        for a in in_work:                       # 작업 폴더에서 연 세션 — 그 작업이 속한 WU
+            units.add(a, s["obs_id"], "key", "high", ["work_folder"])
         if keys:
             for k in keys:
                 units.add(f"issue:{k}", s["obs_id"], "key", "high", ["issue_key"])
+            continue
+        if any(a.startswith("issue:") for a in in_work):     # 이슈에 이어진 작업 폴더 — 그것으로 충분하다
             continue
         linked = False
         for b in s["keys"].get("branches", []):
@@ -239,6 +305,9 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
                 linked = True
         if linked:
             continue
+        # 키 없는 작업 폴더의 세션도 경로 겹침으로 커밋을 찾는다 — 그 커밋이 아무 데도 안 이어졌으면 그 작업에 들인다
+        linked = bool(in_work)
+        own = set(in_work) or {f"ai_session:{s['objects'][0]['id']}"}
         spaths = set(s["keys"].get("paths", []))
         if spaths:
             for ts, oid in commit_times[bisect.bisect_left(commit_ts_only, start):]:
@@ -248,10 +317,10 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
                 if not overlap:
                     continue
                 conf = "medium" if len(overlap) >= 2 or len(overlap) / len(spaths) >= 0.5 else "low"
-                targets = commit_anchor.get(oid) or {f"ai_session:{s['objects'][0]['id']}"}
+                targets = commit_anchor.get(oid) or own
                 for a in targets:
                     units.add(a, s["obs_id"], "probabilistic", conf, ["time_window", "path_overlap"])
-                    if a.startswith("ai_session:"):
+                    if a.startswith(("ai_session:", "work:")):
                         units.add(a, oid, "probabilistic", conf, ["time_window", "path_overlap"])
                 linked = True
         if not linked and (s["metrics"].get("edits", 0) > 0
@@ -269,10 +338,16 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
                 times.append(session_end[o["obs_id"]])
         start, last = min(times), max(times)
         state = states.get(anchor[6:]) if anchor.startswith("issue:") else None
+        wsnaps = [o for o in mobs if o["kind"] == "workspace.snapshot"]
+        declared = [o for o in wsnaps if (o.get("labels", {}).get("status") or [""])[0]]
+        work_status = None
         if state and state["created"]:
             start = min(start, parse_ts(state["created"]))
             end = parse_ts(state["end"]) if state["end"] else None
             basis = "issue"
+        elif declared:                          # 트래커가 없으면 작업 기록(상태를 적은 것)이 기간·상태의 출처다
+            start, end, work_status = work_span(declared, start)
+            basis = "work"
         else:
             end, basis = last, "last_activity"
         mcommits = [o for o in mobs if o["kind"] == "vcs.commit"]
@@ -284,6 +359,7 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
         wus[anchor] = {
             "anchor": anchor, "start": start, "end": end, "basis": basis, "state": state, "labels": labels,
             "is_fix": is_fix, "doc_like": doc_like, "commits": mcommits, "members": members, "mobs": mobs,
+            "work_status": work_status, "works": sorted({o["objects"][0]["id"] for o in wsnaps}),
             "sig": defaultdict(list), "followups": set(), "induced_by": set(), "suspects": set(), "suspected_by": set(),
         }
     for w in wus.values():                     # 신호는 시각과 함께 모은다 — 결과에는 열린 창 안의 것만 쓴다
@@ -376,7 +452,7 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
             outcome = "followup_fix"
         elif "reopened" in w["signals"]:
             outcome = "reopened"
-        elif resolution and resolution.lower() in abandoned:
+        elif (resolution and resolution.lower() in abandoned) or w["work_status"] == "dropped":
             outcome = "abandoned"
         else:
             outcome = "clean"
@@ -418,6 +494,7 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
                 "ai_sessions": len(sess),
                 "ai_edits": sum(o["metrics"].get("edits", 0) for o in sess),
                 "ai_test_runs": sum(o["metrics"].get("test_runs", 0) for o in sess),
+                "works": w["works"],
             },
             "build": {"stitch_recipe": RECIPE, "as_of": as_of.isoformat(timespec="seconds")},
         })
@@ -433,7 +510,7 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
             k = "vcs.merge(sync)"
         kinds[k][1] += 1
         kinds[k][0] += o["obs_id"] in linked
-    countable = [o for o in obs if not o["kind"].startswith("issue.")]
+    countable = [o for o in obs if not o["kind"].startswith("issue.") and o["kind"] != "workspace.snapshot"]   # 스스로 앵커인 것은 빼고 센다
     orphans = sum(1 for o in countable if o["obs_id"] not in linked)
     vcs_commits = [c for c in commits if c["kind"] == "vcs.commit"]
     report = {
@@ -456,8 +533,9 @@ def stitch(observations: list[dict], cfg: dict, as_of: dt.datetime,
 
 
 def _title(anchor: str, mobs: list[dict], excerpts: dict[str, str]) -> str:
-    """WU 제목: 이슈 요약(생성 사건 발췌의 첫 줄) 또는 첫 커밋 제목. 없으면 빈 문자열."""
+    """WU 제목: 이슈 요약(생성 사건 발췌의 첫 줄), 없으면 작업 기록의 제목, 없으면 첫 커밋 제목. 없으면 빈 문자열."""
     first = [o for o in mobs if o["kind"] == "issue.created"] or sorted(
+        (o for o in mobs if o["kind"] == "workspace.snapshot" and excerpts.get(o["obs_id"])), key=lambda o: o["obs_id"]) or sorted(
         (o for o in mobs if o["kind"] in ("vcs.commit", "vcs.merge")), key=lambda o: (parse_ts(o["ts"]), o["obs_id"]))
     text = excerpts.get(first[0]["obs_id"], "") if first else ""
     return text.strip().split("\n", 1)[0] if text else ""

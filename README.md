@@ -2,7 +2,7 @@
 
 [![integrity](https://github.com/d-j-lee/work-atlas/actions/workflows/integrity.yml/badge.svg)](https://github.com/d-j-lee/work-atlas/actions/workflows/integrity.yml)
 
-현업에서 **일이 실제로 어떻게 처리됐는지**(문제·처리·결과)를 git·이슈 트래커·AI 세션에서 관측하고, 그것을 캐내서 다음 일의 정체 파악·실행·사후 대처에 **다시 쓰이게** 하는 도구와 방법론이다. 실무 개발자 1인과 AI(Claude)가 대상이다.
+현업에서 **일이 실제로 어떻게 처리됐는지**(문제·처리·결과)를 git·이슈 트래커·AI 세션·작업 폴더에서 관측하고, 그것을 캐내서 다음 일의 정체 파악·실행·사후 대처에 **다시 쓰이게** 하는 도구와 방법론이다. 실무 개발자 1인과 AI(Claude)가 대상이다.
 
 데이터 수집이 목적이 아니다. 다시 쓰일 데이터만 모으고, 다시 쓴 안내가 실제로 맞았는지는 숫자로 잰다.
 
@@ -16,7 +16,7 @@
 
 ```text
 $ atlas context --issue ZOOKEEPER-4990 --path zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/Leader.java
-### work-atlas 맥락 (세대 gen-20261012-8484e33f, 기준 2026-10-12)
+### work-atlas 맥락 (세대 gen-20261012-91e53371, 기준 2026-10-12)
 - `…/quorum/Leader.java` — **결함 수정이 몰린 파일**(high): 수정 41건/변경 88건, 순위 8/584, 최근 2024-10-18
   - 함께 바뀌어 온 파일: `QuorumPeer.java` 40%·32회, `LearnerHandler.java` 39%·31회
   - …
@@ -43,6 +43,7 @@ $ atlas context --issue ZOOKEEPER-4990 --path zookeeper-server/src/main/java/org
 |---|---|
 | Claude (작업 중) | **훅**: 파일을 고친 직후 "결함이 몰린 파일"·"함께 바뀌어 온 파일 중 아직 안 바꾼 것"을, 이슈 키가 든 프롬프트에 그 이슈의 맥락을 넣는다. 세션당 파일마다 한 번, 막지 않는다 |
 | Claude (일을 받을 때) | **사용 스킬**: 위 맥락으로 트리아지 브리프를 내고, 예측과 사람의 판정을 기록한다 · **MCP 서버**(선택) |
+| Claude (작업 폴더에서) | **작업 공간**: 일 하나에 폴더 하나. 작업 CLAUDE.md 가 작업 기록(`WORK.md`)과 맥락 파일을 세션마다 불러오고, 비슷한 과거 작업에 그때의 작업 기록 위치를 붙인다. 끝낼 때 남긴 회고가 다음 일의 맥락이 된다 → [`WORKSPACE.md`](WORKSPACE.md) |
 | 사람 | **업무 지도**: HTML 한 장 — 핫스팟·동반 변경·처리 통계·실천과 결과·AI 세션·데이터 상태와 경고 · **카탈로그**: 지금 이 지식을 얼마나 믿을 수 있나 |
 
 ## 효용 — 실데이터로 잰 것
@@ -71,11 +72,12 @@ Apache commons-lang·ZooKeeper 의 git + Jira 로, 과거만 보고 배운 뒤 �
 ```bash
 pip install -e .                       # Python 3.11+. MCP 서버를 쓰려면 pip install "mcp>=1.2"
 cp atlas.example.toml atlas.toml       # 소스·이슈 키·나의 식별자. 비밀값은 환경 변수 '이름'만
-atlas collect all                      # git · Jira · Claude Code → data/observations (읽기 전용, 증분)
+atlas collect all                      # git · Jira · Claude Code · 작업 폴더 → data/observations (읽기 전용, 증분)
 atlas build                            # 상관 → 마이닝 → 카탈로그 → 업무 지도 (매번 처음부터)
 atlas catalog                          # 데이터 상태와 경고
 atlas context --issue ABC-123          # Claude 가 읽을 맥락
-atlas hook --print-settings            # Claude Code 훅 설정 → settings.json 에 합친다
+atlas hook --print-settings            # Claude Code 훅 설정 → ~/.claude/settings.json 에 합친다
+atlas work new ABC-123                 # 작업 폴더: WORK.md · CLAUDE.md · CONTEXT.md (WORKSPACE.md)
 atlas eval --cutoff 2026-01-01 --horizon-days 90   # 내 저장소에서 효용 평가
 ```
 
@@ -85,7 +87,7 @@ atlas eval --cutoff 2026-01-01 --horizon-days 90   # 내 저장소에서 효용 
 
 ```mermaid
 flowchart LR
-  S["git · Jira · Claude Code<br/>(+ 사내 수집기 → ingest)"] -->|"collect · 읽기만"| L0
+  S["git · Jira · Claude Code · 작업 폴더<br/>(+ 사내 수집기 → ingest)"] -->|"collect · 읽기만"| L0
   subgraph CANON["정본 · 덧붙이기만"]
     L0["관측 L0"]
   end
@@ -119,8 +121,9 @@ flowchart LR
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 엔진 구조, 설계 결정과 이유, 넓히는 곳, 남겨 둔 시드 |
 | [`EVALUATION.md`](EVALUATION.md) | 공개 실데이터 효용 평가와 한계 |
 | [`BOOTSTRAP.md`](BOOTSTRAP.md) | 사내 Claude Code에 붙여 넣는 단계별 프롬프트 |
+| [`WORKSPACE.md`](WORKSPACE.md) | 작업 공간 — 일 하나에 폴더 하나, 파일 역할·작업 기록·수명, Claude Code 와 atlas 에 맞물리는 법 |
 | [`CLAUDE.md`](CLAUDE.md) | 사내 인스턴스에서 AI가 지킬 쓰기 권한과 규칙 |
-| [`method/`](method) | 정본 방법 — 코드북·데이터 계약(`schema.md`, JSON 스키마)·정책·재도출 프롬프트·사용 스킬 |
+| [`method/`](method) | 정본 방법 — 코드북·데이터 계약(`schema.md`, JSON 스키마)·정책·재도출 프롬프트·사용 스킬·작업 폴더 템플릿 |
 | [`tests/`](tests) | 엔진 테스트 (합성 데이터) |
 | [`CHANGELOG.md`](CHANGELOG.md) | 버전과 설계 결정 |
 
@@ -136,20 +139,21 @@ flowchart LR
 ## 하지 않는 것
 
 - **개인 성과 측정 도구가 아니다.** 사람은 역할(self·bot·unknown)로만 남고, 결함 귀속과 업무 분포는 원형 단위 집계로만 낸다.
-- **원천 시스템에 쓰지 않는다.** 수집기·훅·MCP 는 읽기만 한다. 쓰기는 이 저장소의 관측 로그에 예측·판정을 남기는 `atlas record` 하나뿐이다.
-- **git·Jira·Claude Code 밖의 커넥터는 없다.** 메신저·메일·위키 등은 사내 수집기가 관측 계약에 맞춰 내고 `atlas ingest` 로 넣는다.
+- **원천 시스템에 쓰지 않는다.** 수집기·훅·MCP 는 읽기만 한다. 관측 로그에 쓰는 것은 예측·판정을 남기는 `atlas record` 하나뿐이다. 사람의 작업 폴더에는 `atlas work` 를 부를 때만 쓴다 — 사람이나 그 작업을 하는 Claude 가 부를 때(새 작업의 파일 · 맥락 파일 · 종료 표시).
+- **git·Jira·Claude Code·작업 폴더 밖의 커넥터는 없다.** 메신저·메일·위키 등은 사내 수집기가 관측 계약에 맞춰 내고 `atlas ingest` 로 넣는다.
 - **인과를 말하지 않는다.** 함께 바뀐 파일·실천과 결과는 연관이다.
 
 ## 상태
 
-- **v2.0 (2026-10-13).** 엔진 구현.
-  - 테스트 130개(합성 데이터, Python 3.11·3.12·3.13). 네 번의 독립 검토와 수정마다 넣은 변이 84종을 모두 잡는다.
-  - 공개 실데이터 평가: commons-lang·ZooKeeper, 관측 약 10만 줄.
+- **v2.1 (2026-10-13).** 작업 공간 통합 — 작업 폴더를 네 번째 관측원으로([`WORKSPACE.md`](WORKSPACE.md)).
+  - 테스트 170개(합성 데이터, Python 3.11·3.12·3.13). 다섯 번의 독립 코드 검토와 수정마다 넣은 변이 154종을 모두 잡는다.
+  - 공개 실데이터 평가: commons-lang·ZooKeeper, 관측 약 10만 줄. 작업 공간을 더한 뒤에도 평가 결과는 바이트 단위로 같다.
 - **확인하지 않은 것** `[미확인]`
   - 사내 데이터·한국어 텍스트에서의 품질
   - 실제 Jira Cloud 응답 (합성 응답으로만 시험)
   - 훅이 실제 작업 행동을 바꾸는지
   - 의미 층(원형)의 효용 — 사내에서 사람 판정 20건이 쌓여야 판정한다
+  - 작업 기록이 비슷한 작업 찾기를 낫게 하는지 — 공개 데이터에 작업 폴더가 없다. 사내에서 `atlas eval` 로 잰다
 - **다음:** 사내 인스턴스에서 A0~A2 → `atlas eval` 로 내 저장소 효용 확인 → 쓸모 있는 기능만 켜기.
 
 ## 라이선스

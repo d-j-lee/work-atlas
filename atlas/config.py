@@ -26,7 +26,7 @@ DEFAULTS: dict = {
         # fix 에 걸려도 결함 수정이 아닌 것 — 문서·서식·오타 정리. 'comment'·'whitespace' 같은 일반어는 실제 결함 제목에도 나와 넣지 않는다
         "fix_exclude": r"(?i)javadoc|\btypos?\b|\bformatting\b|checkstyle|spotbugs|\bdocs?\b|\bdocumentation\b|오타|주석 수정|문서|포맷",
     },
-    "sources": {"git": [], "jira": [], "claude_code": []},
+    "sources": {"git": [], "jira": [], "claude_code": [], "workspace": []},
     "stitch": {
         "max_issue_keys": 3,          # 이보다 많은 키를 단 커밋은 조인하지 않는다(릴리스·일괄 커밋)
         "session_link_hours": 12,     # AI 세션이 끝나고 이 시간 안의 커밋을 경로 겹침으로 잇는다
@@ -37,7 +37,8 @@ DEFAULTS: dict = {
     },
     "policy": {"open_window_days": 30, "min_judged": 20,
                # 카탈로그 경고 문턱 (policy.md §7 이 이 키를 가리킨다)
-               "orphan_ratio_max": 0.2, "key_coverage_min": 0.5, "stale_days": 8, "transcript_stale_days": 20},
+               "orphan_ratio_max": 0.2, "key_coverage_min": 0.5, "stale_days": 8, "transcript_stale_days": 20,
+               "stale_work_days": 30},
     "mining": {"max_files_per_commit": 30, "min_support": 3, "min_confidence": 0.3,
                "half_life_days": 180, "history_generations": 6,
                "hotspot_rank": "fixes",      # fixes · fix_damp · changes · change_damp · churn (EVALUATION.md)

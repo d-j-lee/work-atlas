@@ -8,6 +8,7 @@
   outcomes  WU 결과 분포 (확정만)
   claims    주장 종류×강도 · 이전 세대 대비 변화 (generation.json)
   ai        AI 세션: 수·작업단위 연결 비율·편집·테스트 실행 비율·도구 오류율·압축 횟수
+  works     작업 폴더: 수·상태별·키 있음·기록 없음·결과 없이 끝남·오래 방치·트래커와 어긋남·비밀값 파일·작업 폴더에서 연 세션
   usage     트리아지·판정·자기 보고 건수
   warnings  정책 임계치(policy.md §7)·운영 위험에 걸린 것과 권하는 조치 — 사람이 볼 곳은 여기다
 """
@@ -21,7 +22,8 @@ from collections import Counter, defaultdict
 
 from . import config as configmod
 from .common import load_units, parse_ts, paths, read_observations, write_text
-from .stitch import latest_sessions
+from .stitch import latest_sessions, latest_snapshots
+from .workspace import OPEN_STATUSES, STATUSES
 
 
 def _load(path):
@@ -31,7 +33,7 @@ def _load(path):
         return None
 
 
-STATE_SYSTEM = {"git": "vcs", "jira": "issue", "claude-code": "ai_session"}
+STATE_SYSTEM = {"git": "vcs", "jira": "issue", "claude-code": "ai_session", "workspace": "workspace"}
 
 
 def last_runs(p) -> dict[tuple, dt.datetime]:
@@ -56,6 +58,11 @@ def build(p, cfg: dict, now: dt.datetime | None = None) -> dict:
     stitch_report = _load(p.stitched.with_name("stitch_report.json")) or {}
     gen = _load(p.model / "generation.json") or {}
     linked = {m["obs_id"] for u in units for m in u.get("members", [])}
+    sessions = latest_sessions(observations)
+    snaps = latest_snapshots(observations)
+    # 이어 쓰이며 다시 관측되는 것(세션·작업 폴더)은 최신 하나만 '지금의 관측'이다 — 연결 비율은 그것으로 센다
+    superseded = {o["obs_id"] for o in observations if o["kind"] in ("ai_session.session", "workspace.snapshot")} \
+        - {o["obs_id"] for o in sessions + snaps}
 
     groups: dict[tuple, list] = defaultdict(list)
     for o in observations:
@@ -75,7 +82,7 @@ def build(p, cfg: dict, now: dt.datetime | None = None) -> dict:
             "partial": sum(1 for o in obs if o["partial"]),
             "collectors": sorted({o["collector"] for o in obs}),
             "collector_kinds": sorted({o["source"]["collector_kind"] for o in obs}),
-            "linked_ratio": round(sum(1 for o in obs if o["obs_id"] in linked) / len(obs), 3) if units else None,
+            "linked_ratio": _ratio([o for o in obs if o["obs_id"] not in superseded], linked) if units else None,
         }
         if system == "vcs":
             commits = [o for o in obs if o["kind"] == "vcs.commit"]
@@ -84,7 +91,6 @@ def build(p, cfg: dict, now: dt.datetime | None = None) -> dict:
                 entry["commit_mr_coverage"] = round(sum(1 for o in commits if o["keys"].get("mr_ids")) / len(commits), 3)
         sources.append(entry)
 
-    sessions = latest_sessions(observations)
     ai = None
     if sessions:
         m = [s["metrics"] for s in sessions]
@@ -101,6 +107,8 @@ def build(p, cfg: dict, now: dt.datetime | None = None) -> dict:
             "newest": max(parse_ts(s["ts"]) for s in sessions).isoformat(timespec="seconds"),
             "oldest": min(parse_ts(s["ts"]) for s in sessions).isoformat(timespec="seconds"),
         }
+
+    works = _works(snaps, sessions, units, cfg, now) if snaps else None
 
     outcomes = Counter(u["stats"].get("outcome") or "진행 중" for u in units if u["span"].get("settled")
                        or not u["span"].get("end"))
@@ -119,10 +127,45 @@ def build(p, cfg: dict, now: dt.datetime | None = None) -> dict:
         "claims": gen.get("claims"),
         "drift": gen.get("drift"),
         "ai": ai,
+        "works": works,
         "usage": usage,
     }
     cat["warnings"] = warnings(cat, cfg, now)
     return cat
+
+
+def _ratio(obs: list[dict], linked: set[str]) -> float | None:
+    return round(sum(1 for o in obs if o["obs_id"] in linked) / len(obs), 3) if obs else None
+
+
+def _works(snaps: list[dict], sessions: list[dict], units: list[dict], cfg: dict, now: dt.datetime) -> dict:
+    """작업 폴더(최신 스냅숏)의 상태와 위생. 어느 폴더인지는 atlas work status 가 이 컴퓨터에서 보여 준다."""
+    stale = float(cfg["policy"].get("stale_work_days", 30))
+    by_id = {u["wu_id"]: u for u in units}
+
+    def status(s: dict) -> str:
+        return (s.get("labels", {}).get("status") or [""])[0]
+
+    def tracker_closed(s: dict) -> bool:
+        for k in s["keys"].get("issue_keys", []):
+            u = by_id.get(f"wu:issue:{k}")
+            if u and u["span"].get("end_basis") == "issue" and u["span"].get("end") and not u["stats"].get("open_now"):
+                return True
+        return False
+
+    open_ = [s for s in snaps if status(s) in OPEN_STATUSES]
+    return {
+        "works": len(snaps),
+        "by_status": dict(sorted(Counter(status(s) or "-" for s in snaps).items())),
+        "keyed": sum(1 for s in snaps if s["keys"].get("issue_keys")),
+        "no_record": sum(1 for s in snaps if not s["metrics"].get("record")),
+        "done_without_result": sum(1 for s in snaps if status(s) == "done" and not s["metrics"].get("has_result")),
+        "stale_open": sum(1 for s in open_ if (now - parse_ts(s["ts"])).total_seconds() / 86400 > stale),
+        "tracker_closed_but_open": sum(1 for s in snaps if status(s) in OPEN_STATUSES and tracker_closed(s)),
+        "unknown_status": sum(1 for s in snaps if status(s) and status(s) not in STATUSES),
+        "sensitive_files": sum(int(s["metrics"].get("sensitive", 0)) for s in snaps),
+        "sessions_in_work_folders": sum(1 for s in sessions if s["keys"].get("works")),
+    }
 
 
 def warnings(cat: dict, cfg: dict, now: dt.datetime) -> list[dict]:
@@ -130,8 +173,9 @@ def warnings(cat: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     pol = cfg["policy"]
     out = []
 
-    def warn(level, what, evidence, action):
-        out.append({"level": level, "what": what, "evidence": evidence, "action": action})
+    def warn(level, what, evidence, action, area="data"):
+        """area: data(지식을 얼마나 믿을지 — 맥락 첫 줄에 나온다) · workspace(작업 폴더 위생 — 카탈로그·atlas work status 에만)."""
+        out.append({"level": level, "what": what, "evidence": evidence, "action": action, "area": area})
 
     for s in cat["sources"]:
         if s["system"] in ("atlas", "self_report"):
@@ -158,7 +202,25 @@ def warnings(cat: dict, cfg: dict, now: dt.datetime) -> list[dict]:
                  "기본 30일 뒤 기록이 지워진다 — 수집 주기를 확인(atlas collect claude-code)")
         if ai["linked_ratio"] is not None and ai["linked_ratio"] < 0.3 and ai["sessions"] >= 10:
             warn("제안", "AI 세션 대부분이 작업단위에 안 이어진다", f"연결 {ai['linked_ratio']:.0%}",
-                 "세션 첫 프롬프트에 이슈 키를 쓰거나, 이슈 브랜치에서 세션을 연다")
+                 "작업 폴더(WORK.md 에 키)에서 세션을 열거나, 첫 프롬프트에 이슈 키를 쓰거나, 이슈 브랜치에서 연다")
+    wk = cat.get("works")
+    if wk:
+        if wk["sensitive_files"]:
+            warn("주의", f"작업 폴더에 비밀값으로 보이는 파일 {wk['sensitive_files']}개", "열지 않았다 (파일 이름 기준)",
+                 "자격 증명·키는 작업 폴더에 두지 않는다 — 어느 폴더인지는 atlas work status", "workspace")
+        if wk["done_without_result"]:
+            warn("제안", f"결과 없이 끝난 작업 {wk['done_without_result']}건", f"끝남 {wk['by_status'].get('done', 0)}건 중",
+                 "WORK.md 의 결과·회고 한 단락 — 비슷한 일을 받을 때 맥락으로 돌아오는 곳이다 (atlas work status)", "workspace")
+        if wk["tracker_closed_but_open"]:
+            warn("정보", f"트래커는 끝났는데 작업 기록은 진행 중 {wk['tracker_closed_but_open']}건", "status active·waiting",
+                 "atlas work close 로 상태를 맞춘다", "workspace")
+        if wk["stale_open"]:
+            warn("정보", f"{int(pol.get('stale_work_days', 30))}일 넘게 손대지 않은 진행 중 작업 {wk['stale_open']}건",
+                 "작업 폴더의 마지막 수정 시각",
+                 "끝났으면 atlas work close, 계속이면 WORK.md 처리에 근황 한 줄 (어느 폴더인지는 atlas work status)", "workspace")
+        if wk["unknown_status"]:
+            warn("정보", f"정해진 값이 아닌 작업 상태 {wk['unknown_status']}건", f"허용: {' · '.join(STATUSES)}",
+                 "WORK.md front-matter 의 status 를 고친다", "workspace")
     d = cat.get("drift")
     if d and d.get("removed", 0) > 0.3 * max(1, sum(sum(v.values()) for v in (cat.get("claims") or {}).values())):
         warn("주의", "이전 세대 대비 주장이 많이 사라졌다", f"-{d['removed']}",
@@ -193,6 +255,10 @@ def render_text(cat: dict) -> str:
         a = cat["ai"]
         lines.append(f"AI 세션 {a['sessions']} · 연결 {a['linked_ratio']} · 편집 세션 중 테스트 실행 {a['test_ratio_of_editing']:.0%}"
                      f" · 도구 오류율 {a['tool_error_rate']}")
+    if cat.get("works"):
+        w = cat["works"]
+        lines.append(f"작업 폴더 {w['works']} ({', '.join(f'{k} {v}' for k, v in w['by_status'].items())}) · 키 있음 {w['keyed']}"
+                     f" · 기록 없음 {w['no_record']} · 여기서 연 세션 {w['sessions_in_work_folders']}")
     u = cat["usage"]
     lines.append(f"사용  트리아지 {u['triages']} · 판정 {u['feedback']} · 자기 보고 {u['self_reports']}")
     if cat["warnings"]:

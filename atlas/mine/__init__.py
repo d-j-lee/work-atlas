@@ -20,7 +20,7 @@ from collections import defaultdict
 
 from .. import config as configmod
 from ..common import dumps, load_units, paths, read_jsonl, read_observations, write_jsonl, write_text
-from ..stitch import RECIPE as STITCH_RECIPE, parse_as_of
+from ..stitch import RECIPE as STITCH_RECIPE, latest_snapshots, parse_as_of
 from . import claims as C
 from . import cochange, corpus as corpusmod, hotspot, process, text
 
@@ -88,6 +88,7 @@ def text_index(units: list[dict], corpus, scope_of) -> dict:
             continue
         for w in c.wus:
             files_of[w].extend(c.paths)
+    snaps = {s["objects"][0]["id"]: s for s in latest_snapshots(list(corpus.obs_by_id.values()), corpus.as_of)}
     meta = {}
     for u in units:
         if u["wu_id"] not in idx.vecs:
@@ -100,7 +101,11 @@ def text_index(units: list[dict], corpus, scope_of) -> dict:
         meta[u["wu_id"]] = {"anchor": u["anchors"][0], "scope": scope_of(u), "title": title, "files": files,
                             "duration_h": u["stats"]["duration_h"], "outcome": u["stats"]["outcome"],
                             "settled": u["span"]["settled"], "end": u["span"]["end"],
-                            "labels": u["stats"].get("labels", {}), "n_changes": u["stats"]["n_changes"]}
+                            "labels": u["stats"].get("labels", {}), "n_changes": u["stats"]["n_changes"],
+                            # 작업 기록의 위치(루트 기준) — 맥락이 '그때의 기록'을 바로 열 수 있게. 루트는 설정에서 붙인다
+                            "works": [{"id": w, "source": snaps[w]["source"]["instance"], "rel": snaps[w]["objects"][0].get("url", ""),
+                                       "status": (snaps[w].get("labels", {}).get("status") or [""])[0]}
+                                      for w in u["stats"].get("works", []) if w in snaps]}
     return {"recipe": text.RECIPE, "n": idx.n, "idf": idx.idf, "vecs": idx.vecs, "meta": meta}
 
 

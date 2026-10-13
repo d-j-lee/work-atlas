@@ -2,14 +2,14 @@
 
 > 왜 이렇게 생겼는지(원칙)는 `METHODOLOGY.md`, 데이터 계약은 `method/schema.md`, 효용의 실측은 `EVALUATION.md`.
 > 여기는 엔진(`atlas/`)이 무엇을 어떤 순서로 만들고, 어디에 두고, 어디를 넓히면 되는지를 적는다.
-> 용어(관측 · 작업단위 · 주장 · 고아 · 열린 창 · 동기화 머지 …)는 [`CONCEPTS.md`](CONCEPTS.md#용어집).
+> 용어(관측 · 작업단위 · 주장 · 고아 · 열린 창 · 동기화 머지 …)는 [`CONCEPTS.md`](CONCEPTS.md#용어집). 작업 폴더의 형식과 이유는 [`WORKSPACE.md`](WORKSPACE.md).
 
 ## 한눈에
 
 ```mermaid
 flowchart LR
   subgraph SRC["원천 — 읽기만"]
-    G[git] & J[Jira DC·Cloud] & CC[Claude Code 대화 기록] & X[그 밖의 소스<br/>사내 수집기]
+    G[git] & J[Jira DC·Cloud] & CC[Claude Code 대화 기록] & WS["작업 폴더 WORK.md<br/>(atlas work 명령만 쓴다)"] & X[그 밖의 소스<br/>사내 수집기]
   end
   subgraph CANON["정본 — 덧붙이기만"]
     L0[("L0 관측<br/>data/observations<br/>+ 발췌 캐시")]
@@ -21,14 +21,14 @@ flowchart LR
     L2[("L2 주장<br/>data/model")]
     META[("카탈로그<br/>메타·경고·세대 변화")]
   end
-  G & J & CC -->|collect| L0
+  G & J & CC & WS -->|collect| L0
   X -->|ingest| L0
   L0 -->|stitch| L1
   L1 -.->|"render → annotate(사내 LLM)"| AN
   L1 & AN -->|validate| CUR
   CUR -->|mine| L2
   L2 -->|catalog| META
-  L2 & META --> CTX[context CLI] & HK[Claude Code 훅] & MCP[MCP 서버] & RP[업무 지도 HTML]
+  L2 & META --> CTX[context CLI] & HK[Claude Code 훅] & MCP[MCP 서버] & RP[업무 지도 HTML] & WF[작업 폴더의 CONTEXT.md<br/>atlas work]
   CUR --> SK[사용 스킬<br/>record · score · similar]
   SK ==>|"예측·판정 — 유일한 쓰기"| L0
   L0 -.->|"atlas eval: 과거만 보고 다음 해 채점"| EV{{"기준선보다 나은 기능만 켠다"}}
@@ -56,7 +56,8 @@ flowchart LR
 | `config` | `atlas.toml` + 기본값, 키·결함·역할 패턴 | → 설정 |
 | `collect/git` | 커밋·머지 → `vcs.commit`·`vcs.merge`. 키·경로·이름 바뀜·MR·되돌림, 증분 | git → L0 |
 | `collect/jira` | DC v2·Cloud v3. 생성 당시 라벨 복원, 상태·해결·변경·연결·댓글. 재시도·증분 | REST → L0 |
-| `collect/claude_code` | 세션 요약 → `ai_session.session`. 편집 파일·테스트 실행·커밋·오류·압축 | `~/.claude/projects` → L0 |
+| `collect/claude_code` | 세션 요약 → `ai_session.session`. 편집 파일(그 파일의 저장소 기준)·테스트 실행·커밋·오류·압축·세션을 연 작업 폴더 | `~/.claude/projects` → L0 |
+| `collect/workspace` | 작업 폴더 → `workspace.snapshot`. front-matter·파일 역할별 개수·작업 기록 발췌. 비밀값 파일·생성물·버릴 것은 관측하지 않는다 | 작업 공간 루트 → L0 |
 | `ingest` | 외부 수집기 JSONL 검증 후 덧붙임 | JSONL → L0 |
 | `store` | 검증·중복 제거·월별 덧붙이기·발췌 캐시·증분 상태 | — |
 | `stitch` | 객체 중심 상관, 사후 신호, 결과 계산, as_of 재생 | L0 → `stitched.jsonl` + 보고 |
@@ -65,6 +66,7 @@ flowchart LR
 | `catalog` | 소스 신선도·커버리지·고아·세대 변화·AI 세션 메타 → 경고와 권하는 조치 | 전부 → `catalog.json` |
 | `context` · `hook` · `mcp_server` · `report` | 소비 — Claude 용 맥락, 편집·프롬프트 순간 주입, MCP, 사람용 HTML | `data/model` → 출력 |
 | `record` · `score` · `similar` | 예측·판정 기록(유일한 사람 쓰기 경로), 채점, 원형 기준 유사 사례 | L0·current |
+| `workspace` (`atlas work`) | 작업 폴더 규칙(무엇이 작업인가 · 파일 역할 · 작업 기록 읽기) · 새 작업 · CONTEXT.md · 종료 · 위생 목록. 사람이 부를 때만 작업 폴더에 쓴다 | 작업 공간 ↔ `data/model` |
 | `evaluate` | 시간 분할 효용 평가(기준선·부트스트랩) | L0 → 평가 JSON |
 | `pipeline` | build 순서·시간 기록·주석 이어 붙이기 | — |
 | `check` · `schema_gen` | 커밋 전 무결성 · 코드북 → 주석 스키마 | — |
@@ -79,6 +81,7 @@ flowchart LR
 | `data/units/{stitched,annotated,current}.jsonl` · `stitch_report.json` | stitch · 사내 annotate · validate | mine · score · similar · context | 밖 |
 | `data/model/claims.jsonl` · `paths.json` · `text_index.json` · `generation.json` · `catalog.json` · `build.json` · `history/` | mine · catalog · build | context · hook · MCP · report | 밖 |
 | `data/reports/atlas-<세대>.html` | report | 사람 | 밖 |
+| 작업 폴더의 `CONTEXT.md` | `atlas work new · context` | Claude(`@CONTEXT.md`) · 사람 | 사람의 폴더 — 수집하지 않는다 |
 | `out/` · `reports/` | 사내 카드 레시피(원형 단위 집계) | 사용 스킬 | 안 |
 
 `data/model/` 이 git 밖인 이유: 주장의 근거에 작업단위·커밋 id 가 있다. WU 단위 귀속은 git 에 남기지 않는다(METHODOLOGY.md §11).
@@ -159,7 +162,13 @@ gitGraph
 | **맥락은 혼합, 훅은 엄격** | 혼합(규칙 → 이름 짝 → 같은 디렉터리)은 재현율이 가장 높다. 편집 순간에는 정밀도(신뢰도 ≥ 0.5)를 우선한다 | EVALUATION.md 결과 1 |
 | **핫스팟 순위 기본값은 결함 수정 수** | 두 저장소 모두 상위 20 정밀도가 가장 높고 "결함 수정 N건"으로 읽힌다. 포착률이 가장 높은 기준은 저장소마다 달라 `atlas eval` 로 고른다 | EVALUATION.md 결과 2 |
 | **소요 시간은 예측하지 않는다** | 비슷한 작업 기반 추정이 기준선보다 낫지 않았다. 분포(처리 통계)만 보여 준다 | EVALUATION.md 결과 4 |
-| **AI 세션은 마지막 관측만 쓴다** | 세션은 이어 쓰이며 커진다. obs_id 에 줄 수를 넣어 덧붙이기만 하고, 읽을 때 최신을 고른다 | — |
+| **AI 세션·작업 폴더는 마지막 관측만 쓴다** | 둘 다 이어 쓰이며 바뀐다. obs_id 에 줄 수(세션)·상태 해시(작업 폴더)를 넣어 덧붙이기만 하고, 읽을 때 최신을 고른다. 작업 폴더는 가장 나중에 수집한 것이 최신이다 — 가장 늦게 바뀐 파일을 지우면 수정 시각이 거꾸로 간다. 예전 상태로 되돌아가면 직전 관측을 해시에 더해 새로 남긴다(그러지 않으면 옛 obs_id 와 겹쳐 버려진다). 과거 시점으로 다시 계산할 때는 그때까지 **수집한** 것만 본다 — 옮겨 온 파일은 수정 시각이 옛날이라 수정 시각으로 거르면 미래가 샌다 | 테스트 `test_latest_snapshot_only` · `test_reverted_state_becomes_a_new_observation` · `test_as_of_hides_later_collections_and_future_closing` |
+| **작업 폴더는 파일로 관리한다 — 정체·상태는 작업 기록에, 위치는 자유** | Claude Code 는 세션을 시작 폴더에 묶어 저장하고 `--continue` 도 그 폴더 기준이다. 상태를 위치로 나타내면(done/ 으로 이동) 이어 쓰기와 atlas 의 세션→작업 연결이 끊긴다. 폴더 분류 체계는 사람마다 달라 강요하면 지켜지지 않는다 | `[문서]` sessions · `WORKSPACE.md` |
+| **트래커가 있으면 트래커가 기간·상태의 정본, 없을 때만 작업 기록** | 필드별 신뢰 소스(METHODOLOGY.md §10) — 상태는 트래커다. 작업 기록은 늦게 고쳐지기 쉽다. 둘이 어긋나면 고치지 않고 위생 경고로 알린다 | 테스트 `test_keyed_work_joins_issue_and_tracker_stays_canonical` |
+| **atlas 가 만든 CONTEXT.md 는 수집하지 않는다** | 요약의 요약 금지(N3). 출력이 다음 빌드의 입력이 되면 스스로를 강화한다. 첫 줄의 생성물 표시로 가린다 — 표시가 없으면 사람의 파일이다 | 테스트 `test_obs_id_follows_content_not_mtime` |
+| **세션의 편집 경로: 저장소에서 연 세션은 그 저장소 파일만, 작업 폴더에서 연 세션은 파일마다 그 파일의 저장소 기준, 작업 공간 안의 파일은 코드가 아니다** | 세션 경로에는 저장소 구분이 없다. 저장소 세션이 남의 저장소 파일(pom.xml 등)을 남기면 엉뚱한 커밋과 겹친다 — 그래서 예전과 같이 둔다. 작업 폴더에는 코드가 없으니 `--add-dir` 로 고친 저장소 파일을 그 저장소 기준으로 남긴다(예전에는 버려졌다). WORK.md 를 저장소 경로로 남기면 경로 겹침이 엉뚱하게 붙는다. 단 작업 폴더 안에 받아 둔 저장소 사본의 파일은 코드다 | 테스트 `test_session_carries_work_id_and_separates_work_edits` · `test_clone_inside_a_work_folder_is_code` · `test_repo_session_keeps_other_repos_out` |
+| **작업 폴더 id 가 겹치면 경로로 가른다** | 폴더를 복사해 새 일을 시작하면 front-matter `id` 가 같아져 두 일이 한 작업으로 합쳐진다. 그 이름의 폴더 하나만 id 를 쓰고 나머지는 경로를 쓴다. 수집기·세션·맥락·명령이 같은 규칙(`workspace.work_ids`)을 쓴다 | 테스트 `test_copied_folder_keeps_its_own_identity` |
+| **작업 폴더 위생 경고는 맥락 첫 줄에 넣지 않는다** (`area: workspace`) | 맥락 첫 줄은 "이 지식을 얼마나 믿을지"다. 정리 문제는 카탈로그와 `atlas work status` 에서 본다 | 테스트 `test_context_for_a_work_folder` |
 | **사후 결과는 이슈 WU 에서만 센다** (처리 통계·실천) | MR·세션 WU 에는 재오픈을 관측할 길이 없다. "문제 없음"이 "관측 못 함"과 섞인다 | — |
 | **모델 파일에 형식 버전을 둔다** | 구조가 바뀐 뒤 옛 파일을 조용히 잘못 읽으면 훅이 말없이 아무것도 안 한다. 맞지 않으면 '다시 빌드'라고 말한다 | 이 구현 중 실제로 겪었다 |
 | **훅은 막지 않는다.** 어떤 오류·종료에도 출력 없이 0, 인스턴스가 아닌 루트에는 아무것도 쓰지 않는다. 세션·파일마다 한 번만 말하고 1,500자로 자른다 | 작업 흐름을 방해하면 끈다 | 테스트 `test_hook_never_blocks` |
@@ -198,4 +207,5 @@ gitGraph
 | 이슈 키 없는 프롬프트에 유사 작업 자동 주입 | 사내에서 텍스트 검색 정밀도를 확인한 뒤 | 모든 프롬프트에 끼어드는 소음 위험 |
 | 디렉터리·모듈 수준 동반 변경 | 파일 수준 응답률이 낮은 저장소 | 파일 수준 + 혼합으로 아직 충분 |
 | 한국어 형태소 분석 | 음절 바이그램 검색이 사내 데이터에서 약할 때 | 외부 의존 없이 시작한다 |
+| 작업 기록의 실천과 결과(계획 먼저 · 결정 기록 · 결과 기록 ↔ 재오픈) · Stop 훅으로 빈 결과·회고 상기 · `_shared/` 승격 후보 | 사내 작업 폴더가 쌓여 `atlas eval` 로 잴 수 있을 때 | 공개 평가 데이터에 작업 폴더가 없어 효용을 재지 못했다(WORKSPACE.md) |
 | MR·리뷰 수집기 (GitLab·GitHub API) | 리뷰 코멘트를 처리 수(moves)의 근거로 쓸 때 | 머지 메시지·스쿼시 번호로 묶음은 이미 잡힌다 |

@@ -1,6 +1,6 @@
 """맥락 — 경로·이슈·문장에 맞는 지식을 Claude 가 바로 쓸 수 있게 짧게 낸다 (근거와 건수 포함).
 
-  python -m atlas context --path src/a.java [--path …] [--issue ABC-123] [--text "…"] [--scope 이름]
+  python -m atlas context --path src/a.java [--path …] [--issue ABC-123] [--text "…"] [--work 작업폴더] [--scope 이름]
                           [--format md|json] [--max-lines 40]
 
 담는 것:
@@ -8,6 +8,7 @@
   이슈  지금 상태(유형·컴포넌트·기간·결과) · 비슷한 과거 작업 · 그 작업들이 바꾼 파일(가능성 순) ·
         같은 유형·컴포넌트의 처리 통계(소요 P50·P90 · 재오픈률)
   문장  비슷한 과거 작업과 그 파일 — 이슈 키가 없는 일도 찾는다
+  작업  작업 폴더(WORK.md)의 키·제목·문제로 위를 찾는다. 비슷한 과거 작업에 그때의 작업 기록 위치를 붙인다
 원칙: 숫자에는 건수를 붙이고, 연관을 인과로 말하지 않는다. 데이터 상태가 나쁘면(키 커버리지 등) 첫 줄에 밝힌다.
 앵커(이슈 키 등)는 이 출력 안에서만 쓴다 — 커밋·문서에 붙여 넣지 않는다(CLAUDE.md).
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -152,6 +154,33 @@ def likely_files(sims: list[dict], k: int = 8) -> list[dict]:
             for f, v in sorted(score.items(), key=lambda x: (-x[1], x[0]))[:k]]
 
 
+def work_path(cfg: dict, w: dict, base: Path | None = None) -> str | None:
+    """작업 기록의 위치(이 컴퓨터) — 설정의 작업 공간 루트 + 루트 기준 경로. 표시용이고 어디에도 저장하지 않는다."""
+    from . import workspace as wsmod
+    src = next((x for x in wsmod.sources(cfg, base) if x.name == w.get("source")), None)
+    if not src or not w.get("rel"):
+        return None
+    full = src.root / w["rel"]
+    home = str(Path.home())
+    text = str(full)
+    return "~" + text[len(home):] if text.startswith(home + os.sep) else text
+
+
+def _work_here(cfg: dict, where: str, base: Path | None = None) -> dict:
+    from . import config as configmod, workspace as wsmod
+    loc = wsmod.locate(where, wsmod.sources(cfg, base))
+    if not loc:
+        return {"known": False, "path": str(where)}
+    src, wdir, rel = loc
+    rec = wsmod.read_record(wdir / src.record)
+    pat = configmod.Patterns(cfg)
+    keys = pat.issue_keys(*(rec.keys() if rec else [])) or pat.issue_keys(wdir.name)
+    return {"known": True, "id": wsmod.resolve(src, wdir, rel), "source": src.name, "rel": rel,
+            "path": work_path(cfg, {"source": src.name, "rel": rel}, base) or str(wdir), "keys": keys,
+            "status": rec.status if rec else "", "title": rec.title if rec else "",
+            "problem": (rec.sections.get("problem", "") if rec else "")[:600]}
+
+
 def issue_info(model: Model, p, key: str) -> dict:
     wu_id = f"wu:issue:{key}"
     path = units_path(p)
@@ -160,7 +189,7 @@ def issue_info(model: Model, p, key: str) -> dict:
     text = ""
     if model.text and wu_id in model.text["vecs"]:
         text = " ".join(t for t, _ in sorted(model.text["vecs"][wu_id].items(), key=lambda x: -x[1])[:30])
-    info = {"key": key, "known": bool(unit), "title": (meta or {}).get("title")}
+    info = {"key": key, "known": bool(unit), "title": (meta or {}).get("title"), "works": (meta or {}).get("works", [])}
     if unit:
         s = unit["stats"]
         info.update({"labels": s.get("labels", {}), "start": unit["span"]["start"], "end": unit["span"]["end"],
@@ -181,11 +210,20 @@ def issue_info(model: Model, p, key: str) -> dict:
 
 
 def build(p, cfg: dict, paths_: list[str] = (), issue: str | None = None, text: str | None = None,
-          scope: str | None = None, cwd: str | None = None) -> dict:
+          scope: str | None = None, cwd: str | None = None, work: str | None = None) -> dict:
     model = Model(p)
+    exclude: set[str] = set()
+    here = _work_here(cfg, work, p.root) if work else None
+    if here and here["known"]:                  # 작업 폴더: 선언된 키로 이슈를, 제목·문제로 비슷한 작업을 찾는다
+        issue = issue or (here["keys"][0] if here["keys"] else None)
+        text = " ".join(filter(None, [text, here["title"], here["problem"]])) or None
+        exclude.update([f"wu:work:{here['id']}", *(f"wu:issue:{k}" for k in here["keys"])])   # 이 작업 자신은 비슷한 작업이 아니다
     is_test = path_filter(cfg["mining"]["test_paths"])
     out: dict = {"generation": model.generation.get("generation"), "as_of": model.generation.get("as_of"),
-                 "health": [w for w in model.catalog.get("warnings", []) if w["level"] in ("주의", "제안")][:2]}
+                 "health": [w for w in model.catalog.get("warnings", [])        # 작업 폴더 위생은 카탈로그·work status 에서만
+                            if w["level"] in ("주의", "제안") and w.get("area", "data") == "data"][:2]}
+    if here:
+        out["work"] = {k: v for k, v in here.items() if k != "problem"}
     out["paths"] = [path_info(model, repo_relative(x, cwd), scope, is_test, fill=5) for x in paths_]
     if model.stale:
         out["health"] = [{"level": "주의", "what": "모델이 옛 형식이다", "evidence": "data/model",
@@ -193,13 +231,15 @@ def build(p, cfg: dict, paths_: list[str] = (), issue: str | None = None, text: 
     if issue:
         info = issue_info(model, p, issue)
         query = " ".join(filter(None, [info.get("title") or "", text or "", info.pop("text", "")]))
-        exclude = {f"wu:issue:{issue}"}
+        exclude.add(f"wu:issue:{issue}")
         out["issue"] = info
         out["similar"] = similar(model, query, exclude=exclude)
         out["likely_files"] = likely_files(similar(model, query, k=10, exclude=exclude, with_files=True))
     elif text:
-        out["similar"] = similar(model, text)
-        out["likely_files"] = likely_files(similar(model, text, k=10, with_files=True))
+        out["similar"] = similar(model, text, exclude=exclude)
+        out["likely_files"] = likely_files(similar(model, text, k=10, exclude=exclude, with_files=True))
+    for item in [out.get("issue") or {}, *(out.get("similar") or [])]:
+        item["work_paths"] = [x for x in (work_path(cfg, w, p.root) for w in item.get("works", [])) if x]
     return out
 
 
@@ -218,10 +258,20 @@ def _late(iss: dict) -> str:
     return ""
 
 
+def _records(item: dict) -> str:
+    paths_ = item.get("work_paths") or []
+    return f" · 기록 `{paths_[0]}`" + (f" 외 {len(paths_) - 1}" if len(paths_) > 1 else "") if paths_ else ""
+
+
 def render_md(ctx: dict, max_lines: int = 40) -> str:
     lines = [f"### work-atlas 맥락 (세대 {ctx.get('generation') or '-'}, 기준 {(ctx.get('as_of') or '-')[:10]})"]
     for w in ctx.get("health", []):
         lines.append(f"- 데이터 상태: {w['what']} ({w['evidence']})")
+    wk = ctx.get("work")
+    if wk:
+        lines.append(f"- 작업 폴더 `{wk['path']}` — " + (
+            f"{wk.get('title') or '(제목 없음)'} · 상태 {wk.get('status') or '-'} · 키 {','.join(wk.get('keys') or []) or '없음'}"
+            if wk.get("known") else "설정된 작업 공간 밖이다 (atlas.toml [[sources.workspace]])"))
     for pi in ctx.get("paths", []):
         if not pi["known"]:
             lines.append(f"- `{pi['path']}`: 이 파일의 이력 지식 없음")
@@ -243,10 +293,11 @@ def render_md(ctx: dict, max_lines: int = 40) -> str:
     if iss:
         if iss["known"]:
             lab = iss.get("labels", {})
-            lines.append(f"- 이슈 {iss['key']}: {iss.get('title') or ''} — 유형 {','.join(lab.get('type', [])) or '-'}"
+            lines.append(f"- 이슈 {iss['key']}: {iss.get('title') or '(제목 없음)'} — 유형 {','.join(lab.get('type', [])) or '-'}"
                          f" · 컴포넌트 {','.join(lab.get('component', [])) or '-'} · 시작 {iss['start'][:10]}"
                          f" · {'끝남 ' + iss['end'][:10] if iss.get('end') else '진행 중'}"
-                         f"{' · 결과 ' + iss['outcome'] if iss.get('outcome') else ''}{_late(iss)}")
+                         f"{' · 결과 ' + iss['outcome'] if iss.get('outcome') else ''}{_late(iss)}"
+                         f"{'' if (wk or {}).get('known') else _records(iss)}")
             pr = iss.get("process")
             if pr:
                 lines.append(f"  - 같은 {pr['group']} 처리 {pr['ended']}건: 소요 중앙 {_hours(pr['duration_h_p50'])}"
@@ -260,7 +311,7 @@ def render_md(ctx: dict, max_lines: int = 40) -> str:
         for s in sims:
             dur = _hours(s.get("duration_h"))
             lines.append(f"  - {s.get('anchor', s['wu_id'])} ({s['similarity']:.2f}) {(s.get('title') or '')[:70]}"
-                         f" — {s.get('outcome') or '진행 중'} · {dur} · 변경 {s.get('n_changes', 0)}")
+                         f" — {s.get('outcome') or '진행 중'} · {dur} · 변경 {s.get('n_changes', 0)}{_records(s)}")
     lf = ctx.get("likely_files") or []
     if lf:
         lines.append("- 비슷한 작업들이 바꾼 파일(가능성 순, 괄호는 그 파일을 바꾼 이웃 수): "
@@ -281,12 +332,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--issue")
     ap.add_argument("--text")
     ap.add_argument("--scope")
+    ap.add_argument("--work", nargs="?", const=".", help="작업 폴더 (값 없이 쓰면 지금 폴더)")
     ap.add_argument("--format", choices=["md", "json"], default="md")
     ap.add_argument("--max-lines", type=int)
     args = ap.parse_args(argv)
     p = paths(args.root)
     cfg = configmod.load(p.root)
-    ctx = build(p, cfg, args.path, args.issue, args.text, args.scope)
+    ctx = build(p, cfg, args.path, args.issue, args.text, args.scope, work=args.work)
     if args.format == "json":
         print(json.dumps(ctx, ensure_ascii=False, indent=2))
     else:

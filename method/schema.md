@@ -18,6 +18,7 @@ schema_version: 1
 | 업무 지도 | `data/reports/atlas-<세대>.html` | 제외 |
 | WU 입력 문서 | `data/render/<wu>-<해시8>.md`, `data/render/index.json` | 제외 |
 | 주간 수확 리포트 | `data/reports/` | 제외 |
+| 작업 폴더의 맥락 파일 | 사람의 작업 폴더 `CONTEXT.md` — `atlas work new · context` 가 만든다. 생성물이라 수집하지 않는다 | 사람의 폴더 |
 | L2 모델·L3 카드 (원형 단위 집계) | `out/model/`, `out/cards/`, `out/MANIFEST.json` | 포함 |
 | 오버레이 | `overlays/*.yaml` | 포함 |
 | 골든셋 | `method/golden/labels.csv` | 포함 (앵커 참조와 라벨만, 본문 없음) |
@@ -47,7 +48,7 @@ schema_version: 1
 | 필드 | 규칙 |
 |---|---|
 | `obs_id` | 결정론적이고 재수집해도 같은 값. 중복 제거 키 |
-| `source.system` | `issue · vcs · ci_cd · deploy · wiki · mail · chat · calendar · monitor · ai_session · self_report · atlas`. 늘릴 땐 이 표를 먼저 고친다 |
+| `source.system` | `issue · vcs · ci_cd · deploy · wiki · mail · chat · calendar · monitor · ai_session · workspace · self_report · atlas`. 늘릴 땐 이 표를 먼저 고친다 |
 | `source.collector_kind` | `api · cli · mcp_sdk · llm_mediated · human`. `llm_mediated` 는 결정론 보장 밖이며 통계에서 분리 표시한다. `human` 은 `atlas record` 로 남긴 사람·사용 사건 |
 | `kind` | `<system>.<event>` 형식이고 접두가 `source.system` 과 같아야 한다. 예: `vcs.commit`, `vcs.mr.merged`, `chat.message`, `self_report.untracked_work`, `atlas.triage` |
 | `ts` · `collected_at` | ISO 8601, **시간대 필수**. 비교는 문자열이 아니라 시각으로 한다(시간대가 섞이면 문자열 순서가 틀린다) |
@@ -75,7 +76,8 @@ schema_version: 1
 | `issue.changed` | 〃 | issue | `issue_keys` | `field` + 그 필드의 **변경 뒤 전체 값** | `cleared` |
 | `issue.linked` | 〃 | issue | `issue_keys` · `links`(`<관계 문구>\|<대상 키>`, 예: `is caused by\|ABC-1`) | — | — |
 | `issue.comment` | `…#c<댓글 id>` | issue | `issue_keys` · `mentions` | — | `chars` |
-| `ai_session.session` | `ai_session:<이름>:<세션 id>#<줄 수>` | ai_session | `paths`(저장소 기준) · `issue_keys` · `branches`(해시 키) | — | `prompts` · `turns` · `tool_calls` · `edits` · `reads` · `bash` · `test_runs` · `commits` · `tool_errors` · `web` · `subagents` · `compactions` · `duration_min` · `unparsed_lines` |
+| `ai_session.session` | `ai_session:<이름>:<세션 id>#<줄 수>` | ai_session | `paths`(편집한 파일이 든 저장소 기준) · `issue_keys` · `branches`(해시 키) · `works`(세션을 연 작업 폴더) | — | `prompts` · `turns` · `tool_calls` · `edits` · `reads` · `bash` · `test_runs` · `commits` · `tool_errors` · `web` · `subagents` · `compactions` · `duration_min` · `unparsed_lines` · `work_edits` |
+| `workspace.snapshot` | `workspace:<이름>:<작업 id>#<상태 해시 12자>` | work (`id` = `<이름>:<작업 id>`, `url` = 루트 기준 경로) | `issue_keys`(front-matter 의 key, 비었으면 폴더 이름) · `works` | front-matter 의 `status` · `started` · `closed` · `repos` · `kind` · `tags` | `files` · `bytes` · 역할별 개수(`record` · `instructions` · `plan` · `decision` · `evidence` · `output` · `other`) · `sensitive` · `repos_inside` · `has_problem` · `has_process` · `has_result` · `has_retro` · `record_chars` · `record_error` |
 
 | 규칙 | 이유 |
 |---|---|
@@ -83,9 +85,13 @@ schema_version: 1
 | 이슈 생성 사건의 라벨은 지금 값에서 변경 이력을 거꾸로 되감아 만든다. 이후 변경은 `issue.changed` 로 그 시각에 남긴다 | 지금 값을 생성 시각에 붙이면 시간 분할 평가에 미래가 샌다 |
 | AI 세션은 이어 쓰이며 커진다. 줄 수가 obs_id 에 들어가 새 관측이 생기고, **읽는 쪽은 세션별 줄 수가 가장 큰 것 하나만** 쓴다 | 덧붙이기만 하면서 최신을 쓴다 |
 | 이슈 키·결함 수정 판정처럼 설정에 기대는 값은 **빌드 때 지금 설정으로 다시 거른다**(키는 좁히기만, 결함 수정은 발췌가 있으면 다시 판정) | L0 는 고칠 수 없고 obs_id 로 중복을 거른다. 수집 때의 판정만 믿으면 규칙을 고쳐도 옛 값이 남는다 |
-| 발췌(커밋 메시지·이슈 요약과 설명·댓글·첫 프롬프트)는 가린 뒤 자른다. 커밋 메시지의 이름 트레일러(Signed-off-by 등)는 뺀다. 소스마다 `excerpt = false` 로 끈다 | 1차 방어는 '필요한 만큼만'이다 |
+| 발췌(커밋 메시지·이슈 요약과 설명·댓글·첫 프롬프트·작업 기록)는 가린 뒤 자른다. 커밋 메시지의 이름 트레일러(Signed-off-by 등)는 뺀다. 홈 폴더 경로의 계정 이름(`/Users/<계정>` · `/home/<계정>` · `C:\Users\<계정>`)은 `~` 로 바꾼다. 소스마다 `excerpt = false` 로 끈다 | 1차 방어는 '필요한 만큼만'이다. 기계적으로 지울 수 있는 이름은 지운다 |
 | 사람은 `self`·`bot`·`unknown`(또는 코드북 roles)으로만 남는다. 이메일·이름·계정 id 는 판정에만 쓰고 저장하지 않는다 | 개인 식별자 금지 |
 | 브랜치 이름은 정규화(원격 접두·`owner:` 제거)한 뒤 해시 키 `b:<12자>` 로만 남긴다. 메인라인은 남기지 않는다. `keep_branch_names = true` 면 이름 그대로 | 이름에 계정·별칭이 들어가는 관례가 흔하다. 머지와 AI 세션이 같은 규칙으로 해시하므로 조인은 된다 |
+| 작업 폴더는 내용이 바뀔 때마다 다시 관측된다. obs_id 끝은 상태(키·라벨·수치·발췌·파일 목록과 크기)의 해시라 같은 상태는 다시 들어가지 않는다. 예전 상태로 되돌아가면 `#<해시>~<직전 obs_id 의 해시 6자>` 로 새로 남긴다. **읽는 쪽은 작업 폴더별로 가장 나중에 수집한 것 하나만** 쓰고, as_of 로 다시 계산할 때는 그때까지 수집한 것만 본다. `ts` 는 관측한 파일의 마지막 수정 시각이고 수집 시각을 넘지 않는다 | 원천(폴더)이 살아 있어 언제든 다시 찍을 수 있다. 수정 시각만 바뀐 것은 새 상태가 아니다. 파일을 지우면 수정 시각이 거꾸로 가고, 옮겨 온 파일은 수정 시각이 옛날이다 — 그래서 최신과 보이는 범위는 수집 시각으로 정한다 |
+| 작업 폴더의 키는 front-matter 의 `key`(`keys`)이고, 비었을 때만 폴더 이름에서 뽑는다. 본문의 키는 쓰지 않는다. 작업 id 는 front-matter 의 `id`, 없으면 루트 기준 경로다. id 가 여러 폴더에서 겹치면 그 이름의 폴더 하나만 id 를 쓰고 나머지는 경로를 쓴다. Claude Code 수집기는 세션을 연 폴더에서 같은 규칙(`workspace.work_ids`)으로 id 를 만들어 `works` 에 남긴다 | 본문은 참고로 다른 이슈를 자주 언급한다. 폴더 이름이 바뀌어도 id 가 같아야 세션·작업단위가 이어진다. 복사한 폴더가 원래 일과 합쳐지지 않게 |
+| 작업 폴더에서 내용을 읽는 파일은 작업 기록(제목·문제·결과·회고·처리)과 첫 결정 기록(본문)의 앞부분뿐이다. 나머지는 이름으로 역할을 세기만 한다. 관측하지 않는 것: 첫 줄에 생성물 표시가 있는 `CONTEXT.md` · `scratch/`·`tmp/`·도구 폴더 · 저장소 사본(`.git` 이 있는 폴더 — `repos_inside` 로 셈. 작업 폴더 자체가 워크트리면 맨 위 파일과 역할 폴더만 센다) · 비밀값으로 보이는 파일(열지 않고 `sensitive` 로 셈). 경로는 루트 기준으로만 남기고 루트 자체는 남기지 않는다. front-matter 값의 절대·홈 경로는 마지막 이름만 남긴다 | 요약의 요약 금지(N3) · 필요한 만큼만 · 루트·홈 경로에는 계정 이름이 들어간다 |
+| AI 세션의 편집 파일: 저장소에서 연 세션은 그 저장소 루트 기준이고 밖의 파일은 버린다. 저장소가 아닌 폴더(작업 폴더)에서 연 세션은 파일마다 그 파일이 든 저장소의 루트 기준이다. 작업 공간 안의 파일은 `paths` 에 넣지 않고 `work_edits` 로 센다 — 작업 폴더 안에 받아 둔 저장소 사본의 파일은 예외로 코드다 | 세션 경로에는 저장소 구분이 없어 남의 저장소 파일이 엉뚱한 커밋과 겹친다. 작업 폴더에서 연 세션은 `--add-dir` 로 고친 저장소 파일을 잃지 않게. 작업 기록이 코드 경로로 섞이지 않게 |
 | 동기화 머지는 `sync_merge: true` 로 표시하고 `commits` 를 남기지 않는다. 상관도 이 머지의 커밋을 작업으로 세지 않는다. 판정은 두 겹이다. **메시지**: 들여온 브랜치가 메인라인(`master·main·develop·dev·trunk·release…`, 원격 접두만 허용)이다 — GitHub PR 은 받는 쪽이 메시지에 없으므로 소유자가 이 저장소의 원격 소유자(소스 설정 `owner`, 없으면 `upstream`·ref 의 원격·`origin` 순)일 때만이고, 같은 이름 브랜치로 들인 MR(포크의 main → main)은 작업이며, 커밋·태그를 메인라인이 아닌 브랜치로 들인 머지도 MR 이 아니면 동기화다. **구조**: 둘째 부모가 수집하는 ref(기본: 원격 기본 브랜치)의 첫 부모 사슬 위에 있다. 둘 다 아니면 작업이다 | 메인라인의 남의 커밋이 그 이슈의 작업단위로 들어가지 않게. 메시지 형식은 호스팅마다 달라 구조 판정이 형식과 무관하게 받친다. 모를 때는 진짜 작업을 버리지 않는 쪽으로 |
 
 ### 사용 기록 — `source.system: "atlas"`
@@ -140,7 +146,7 @@ schema_version: 1
     "followup_suspected_wus": [], "suspected_induced_by_wus": [],
     "deterministic_signals": ["reopened", "rolled_back"],
     "outcome": "rolled_back", "outcome_final": true,
-    "ai_sessions": 1, "ai_edits": 4, "ai_test_runs": 2
+    "ai_sessions": 1, "ai_edits": 4, "ai_test_runs": 2, "works": ["ws:ABC-123-session-drop"]
   },
   "build": { "stitch_recipe": "stitch@1", "as_of": "…", "annotate_recipe": "annotate@0", "codebook_version": 0,
              "model": "<모델 ID>", "input_hash": "sha256:…" }
@@ -149,7 +155,9 @@ schema_version: 1
 
 | 규칙 | 이유 |
 |---|---|
-| `wu_id` 는 **앵커 객체**(가장 먼저 생긴 이슈·MR·스레드)에서 결정론적으로 만든다 | 재빌드해도 ID가 유지돼야 링크가 안 깨진다 |
+| `wu_id` 는 **앵커 객체**(가장 먼저 생긴 이슈·MR·스레드, 키 없는 작업 폴더 `work:<이름>:<작업 id>`)에서 결정론적으로 만든다 | 재빌드해도 ID가 유지돼야 링크가 안 깨진다 |
+| 작업 폴더(최신 스냅숏)는 키의 이슈 WU 에(키가 여럿이면 각각), 키가 없으면 자기 `work:` WU 에 든다. `works` 가 있는 AI 세션은 그 작업 폴더가 속한 WU 에 든다(`work_folder`, 프롬프트의 키 연결과 함께 — 다대다). 키 없는 작업 폴더의 세션은 경로 겹침으로 커밋도 찾고, 아무 데도 안 붙은 커밋은 그 `work:` WU 에 들인다. `stats.works` 는 그 WU 의 작업 객체 id 목록이다 | 작업 폴더에서 연 세션이 고아로 남지 않게. 티켓 없이 한 일도 작업단위가 되고 그 일의 커밋을 가진다 |
+| 트래커 상태가 없고 상태를 적은 작업 기록이 있으면 기간·상태는 작업 기록을 따른다(`end_basis: work`): 시작 = `started`(그날 0시), 끝 = `status` 가 `done`·`dropped` 일 때 `closed`(그날 끝, 없으면 스냅숏 시각), `dropped` 는 `abandoned`. 트래커가 있으면 트래커가 정본이다 | 필드별 신뢰 소스(METHODOLOGY.md §10). 상태를 적지 않은 폴더는 다른 WU 처럼 마지막 활동으로 끝을 잡는다 |
 | `settled` 는 열린 창이 지나면 `true`. 통계와 사후 항목 채점은 확정 WU만 쓴다 | 사후 결과가 다 들어오기 전에 판정하지 않는다 |
 | 확정되면 이슈 상태(종료 시각·재오픈 수)를 얼린다. 창 뒤의 재오픈·재해결은 `late_reopens` 로 세기만 하고, 라벨 변경은 계속 반영한다. 지금 열려 있는지는 얼림과 무관하게 `open_now` 로 따로 남긴다 | 같은 WU 의 확정 결과가 나중 사건으로 뒤집히지 않게. 그러면서도 맥락은 "확정 뒤 다시 열려 지금 진행 중"을 말해야 한다 |
 | `source.system` 이 `atlas` 인 사건은 `members` 에 넣지 않는다 | 예측 누수 차단 |
@@ -160,7 +168,7 @@ schema_version: 1
 | `followup_fix_wus`·`induced_by_wus` 는 창과 무관하게 연결된 모든 쌍(사실)이다. 두 이슈 양쪽에 남은 같은 연결은 한 쌍으로 센다 | 늦게 발견된 회귀도 지식이다. 결과에만 쓰지 않는다 |
 | 파일 수준 SZZ 근사는 `followup_suspected` 로 따로 두고 결과·카드에 쓰지 않는다 | 실데이터 표본 정밀도 약 25% (EVALUATION.md) |
 | `outcome` 은 코드북의 computed 패싯이다: rolled_back > followup_fix > reopened > abandoned > clean. 끝나지 않았으면 null, 확정 전이면 `outcome_final: false` | LLM 이 결과를 코딩하지 않는다 |
-| `end_basis`: 이슈 WU 는 트래커의 해결 시각(`issue`), 그 밖은 마지막 활동(`last_activity`). 사후 비율은 `issue` 인 WU 만 센다 | 재오픈을 관측할 수 없는 WU 에서 '문제 없음'과 '관측 못 함'이 섞이지 않게 |
+| `end_basis`: 이슈 WU 는 트래커의 해결 시각(`issue`), 트래커 없이 상태를 적은 작업 기록이 있으면 그 기록(`work`), 그 밖은 마지막 활동(`last_activity`). 사후 비율은 `issue` 인 WU 만 센다 | 재오픈을 관측할 수 없는 WU 에서 '문제 없음'과 '관측 못 함'이 섞이지 않게 |
 | `labels` 는 기준 시각(as_of)까지의 변경을 재생한 값 | 시간 분할에서도 그 시점의 라벨이다 |
 
 ## WU 입력 문서 — `atlas render` (주석·재도출의 유일한 입력)
@@ -196,9 +204,9 @@ LLM이 읽는 것은 이 문서뿐이다. 같은 WU면 언제 만들어도 같�
 |---|---|
 | `claims.jsonl` | 주장 전부 — 아래 형식 |
 | `paths.json` | `{format, generation, scopes: {<저장소>: {entries: {<경로>: {hot, with}}, files: {<경로>: 변경 수}}}}` — 훅이 편집 순간 읽는다 |
-| `text_index.json` | `{format, generation, idf, vecs, meta}` — 비슷한 과거 작업 검색. `meta` 는 WU 별 앵커·제목·결과·소요·바꾼 파일 |
+| `text_index.json` | `{format, generation, idf, vecs, meta}` — 비슷한 과거 작업 검색. 문서 = 이슈 요약 → 작업 기록 → 커밋·프롬프트 발췌. `meta` 는 WU 별 앵커·제목·결과·소요·바꾼 파일·작업 기록 위치(`works`: 소스 이름·루트 기준 경로·상태 — 절대 경로는 소비가 설정의 루트로 붙인다) |
 | `generation.json` | 세대 id(관측 id·설정·레시피 버전의 해시 — 레시피의 의미가 바뀌면 버전을 올린다) · 이전 세대 · as_of · 입력 수 · 주장 수(종류×강도) · 세대 변화(drift) · `format` |
-| `catalog.json` | 소스·상관·결과·주장·AI 세션·사용의 메타와 경고(권하는 조치 포함) |
+| `catalog.json` | 소스·상관·결과·주장·AI 세션·작업 폴더·사용의 메타와 경고(권하는 조치 포함). 경고의 `area` 는 `data`(맥락 첫 줄에 나온다) · `workspace`(작업 폴더 위생 — 카탈로그·`atlas work status` 에만) |
 | `build.json` | 마지막 빌드의 요약과 단계별 시간 |
 | `history/<세대>.jsonl` | 이전 세대 주장의 요약(id·강도·근거 수). `mining.history_generations` 개까지 |
 
