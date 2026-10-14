@@ -14,14 +14,23 @@ API: DC   GET /rest/api/2/search   startAt·total, 인증 Bearer <개인 액세�
      Cloud GET /rest/api/3/search/jql nextPageToken·isLast, 인증 Basic email:api_token, 본문은 ADF.
      Cloud 의 expand=changelog 는 잘릴 수 있어 total 이 더 크면 /rest/api/3/issue/{key}/changelog 로 나머지를 읽는다.
 증분: 지난번 본 updated 최댓값 - 1일 부터 다시 읽는다(시간대 여유). 중복은 저장소가 건너뛴다.
+사내망: 프록시는 HTTPS_PROXY · NO_PROXY(Windows 는 시스템 프록시 설정도)를 따른다. 사내 CA 는 소스의 ca_bundle(PEM) 또는
+     ATLAS_CA_BUNDLE — 시스템 저장소에 더해 신뢰한다(Windows 는 회사 루트 인증서가 인증서 저장소에 있으면 둘 것이 없다).
+     인증서·호스트 이름·인증·권한·프록시 인증 오류는 다시 시도하지 않고 바로 원인과 할 일을 말한다. 검증을 끄는 설정은 없다 —
+     tls_strict = false 는 Python 3.13 부터 기본인 엄격 규격 검사만 끈다(규격을 다 지키지 않는 옛 사내 CA 용, 신뢰 체인 · 호스트 이름은 그대로).
+     프록시 인증은 Basic(HTTPS_PROXY 의 계정)만 된다 — NTLM · Kerberos 프록시는 로컬 인증 중계를 거친다.
 """
 from __future__ import annotations
 
 import base64
 import datetime as dt
+import functools
 import json
 import os
 import re
+import socket
+import ssl
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -71,6 +80,64 @@ class _SameHostAuth(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_SameHostAuth)
 
 
+def opener_for(source: dict):
+    """소스의 TLS 설정 — ca_bundle(또는 ATLAS_CA_BUNDLE) 이 있으면 시스템 저장소에 더해 그 인증서를 신뢰한다.
+    tls_strict = false 는 Python 3.13 부터 기본인 엄격 규격 검사(VERIFY_X509_STRICT)만 끈다 — 체인·이름 검증은 그대로 한다."""
+    ca = source.get("ca_bundle") or os.environ.get("ATLAS_CA_BUNDLE") or ""
+    lax = str(source.get("tls_strict", True)).strip().lower() in ("false", "0", "no", "off")
+    if not ca and not lax:
+        return _OPENER
+    ctx = ssl.create_default_context()
+    if lax:
+        ctx.verify_flags &= ~getattr(ssl, "VERIFY_X509_STRICT", 0)
+    if ca:
+        path = os.path.expanduser(str(ca))
+        if not os.path.isfile(path):
+            raise CollectError(f"ca_bundle 파일이 없다: {path} — 회사 루트 인증서(PEM)의 경로를 적는다")
+        try:
+            ctx.load_verify_locations(cafile=path)
+        except (ssl.SSLError, OSError) as e:
+            raise CollectError(f"ca_bundle 을 읽지 못했다: {path} — PEM(BASE64) 형식이어야 한다 ({e})") from e
+    return urllib.request.build_opener(_SameHostAuth, urllib.request.HTTPSHandler(context=ctx))
+
+
+HTTP_HINTS = {
+    401: "인증 실패 — auth_env 에 적은 환경 변수의 값(DC: 개인 액세스 토큰 · Cloud: 이메일:API 토큰)이 맞는지, 만료되지 않았는지",
+    403: "권한 없음 — 이 계정으로 JQL 범위를 볼 수 있는지. DC 는 로그인 실패가 쌓이면 CAPTCHA 로 막힌다(웹에서 한 번 로그인)",
+}
+PROXY_AUTH = ("프록시가 인증을 요구한다(407) — Basic 인증이면 HTTPS_PROXY=http://계정:비밀번호@프록시:포트 (특수문자는 % 인코딩). "
+              "NTLM·Kerberos(Windows 통합 인증) 프록시는 Python 표준 라이브러리가 못 한다 → 로컬 인증 중계(px · cntlm 같은 것)를 "
+              "띄우고 HTTPS_PROXY=http://127.0.0.1:<포트>. 사내망의 Jira 라면 NO_PROXY 에 그 호스트를 넣어 프록시를 건너뛴다")
+STRICT_X509 = ("Python 3.13 부터 기본인 엄격한 인증서 검사에 걸렸다 — 회사 CA 인증서가 규격(RFC 5280)의 일부를 지키지 않는다"
+               "(키 식별자 없음 · 기본 제약이 critical 아님). 보안 담당에게 CA 재발급을 요청하거나, 이 Jira 소스에 tls_strict = false 를 "
+               "두면 그 엄격 검사만 끈다(신뢰 체인과 호스트 이름 검증은 그대로)")
+HTTP_HINTS[407] = PROXY_AUTH
+# Python 3.13 의 엄격 검사(VERIFY_X509_STRICT)가 내는 말 — 옛 사내 CA 에서 흔하다
+STRICT_MARKERS = ("Missing Authority Key Identifier", "Missing Subject Key Identifier", "not marked critical",
+                  "marked critical", "does not include key usage extension", "Basic Constraints")
+
+
+def network_problem(reason) -> str | None:
+    """다시 시도해도 나아지지 않는 연결 오류 — 원인과 할 일. 아니면 None(일시적일 수 있다)."""
+    text = str(reason)
+    if "Tunnel connection failed: 407" in text:
+        return PROXY_AUTH
+    if "Tunnel connection failed" in text:
+        return f"프록시가 연결을 거절했다({text[:80]}) — 그 주소가 프록시 허용 목록에 있는지, 사내망 주소면 NO_PROXY 에"
+    if any(x in text for x in STRICT_MARKERS):
+        return STRICT_X509
+    if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in text:
+        strict = sys.version_info >= (3, 13) and bool(ssl.create_default_context().verify_flags & getattr(ssl, "VERIFY_X509_STRICT", 0))
+        return ("TLS 인증서를 신뢰하지 못했다(사내 CA 로 보인다) — Jira 소스에 ca_bundle = \"회사 루트 인증서 PEM 경로\" 를 두거나 "
+                "ATLAS_CA_BUNDLE 환경 변수. Windows 는 회사 루트 인증서가 Windows 인증서 저장소에 있으면 따로 둘 것이 없다"
+                + (". 이미 그 CA 를 신뢰하는데도 안 되면 Python 3.13 의 엄격 검사일 수 있다 — tls_strict = false" if strict else ""))
+    if isinstance(reason, ssl.SSLError):
+        return f"TLS 연결 실패({text[:120]}) — 프록시가 TLS 를 가로채는지, base_url 이 https 인지"
+    if isinstance(reason, socket.gaierror):
+        return "호스트 이름을 찾지 못했다 — 사내망·VPN 연결과 base_url 을 확인(프록시를 쓰면 HTTPS_PROXY · NO_PROXY)"
+    return None
+
+
 def _headers(source: dict) -> dict:
     headers = {"Accept": "application/json", "User-Agent": "work-atlas (read-only collector)"}
     secret = os.environ.get(source.get("auth_env") or "", "")
@@ -84,14 +151,22 @@ def _headers(source: dict) -> dict:
     return headers
 
 
-def http_fetch(url: str, headers: dict, retries: int = 5) -> dict:
-    """GET → JSON. 429·503 은 Retry-After(최대 60초)를 지키며 다시 시도한다."""
+def http_fetch(url: str, headers: dict, retries: int = 5, opener=None) -> dict:
+    """GET → JSON. 429·5xx 은 Retry-After(최대 60초)를 지키며 다시 시도한다. 인증서·이름·인증·권한 오류는 바로 멈춘다."""
     delay = 2.0
+    opener = opener or _OPENER
     for attempt in range(retries + 1):
         req = urllib.request.Request(url, headers=headers)
         try:
-            with _OPENER.open(req, timeout=60) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+            with opener.open(req, timeout=60) as resp:
+                raw, ctype = resp.read(), (getattr(resp, "headers", None) or {}).get("Content-Type", "")
+            try:
+                return json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                html = "html" in ctype.lower() or raw.lstrip()[:1] == b"<"
+                raise CollectError(f"{url.split('?')[0]} — JSON 이 아닌 응답({ctype or '형식 모름'})"
+                                   + (" — SSO 로그인 · 프록시 안내 페이지로 보인다. base_url 이 REST 를 직접 받는 주소인지, "
+                                      "그 주소가 프록시를 거치지 않는지(NO_PROXY) 본다" if html else "")) from e
         except urllib.error.HTTPError as e:
             if e.code in (429, 502, 503, 504) and attempt < retries:
                 wait = e.headers.get("Retry-After")
@@ -99,14 +174,45 @@ def http_fetch(url: str, headers: dict, retries: int = 5) -> dict:
                 delay *= 2
                 continue
             body = e.read().decode("utf-8", "replace")[:300]
-            raise CollectError(f"HTTP {e.code} {url.split('?')[0]} — {body}") from e
+            hint = f" → {HTTP_HINTS[e.code]}" if e.code in HTTP_HINTS else ""
+            raise CollectError(f"HTTP {e.code} {url.split('?')[0]} — {body}{hint}") from e
         except urllib.error.URLError as e:
+            fatal = network_problem(e.reason)
+            if fatal:
+                raise CollectError(f"{url.split('?')[0]} — {fatal}") from e
             if attempt < retries:
                 time.sleep(delay)
                 delay *= 2
                 continue
             raise CollectError(f"{url.split('?')[0]} 에 닿지 못했다 — {e.reason}") from e
     raise CollectError("재시도 한도 초과")
+
+
+def probe(source: dict, fetch=None) -> list[tuple[bool, str]]:
+    """연결 점검(읽기만) — 서버 정보(인증 없이)와 내 계정(인증으로). [(됨?, 설명)]. atlas doctor --online 이 부른다."""
+    base = str(source.get("base_url", "")).rstrip("/")
+    v = "3" if source.get("flavor", "datacenter") == "cloud" else "2"
+    try:
+        fetch = fetch or functools.partial(http_fetch, retries=0, opener=opener_for(source))
+        headers = _headers(source)
+    except CollectError as e:
+        return [(False, str(e))]
+    out = []
+    try:
+        info = fetch(f"{base}/rest/api/{v}/serverInfo", {"Accept": "application/json", "User-Agent": headers["User-Agent"]})
+        info = info if isinstance(info, dict) else {}
+        out.append((True, f"서버에 닿는다 — {info.get('serverTitle') or ''} {info.get('version') or ''}".strip()))
+    except CollectError as e:
+        return [(False, str(e))]
+    if "Authorization" not in headers:
+        out.append((True, "자격 증명 없이(익명) — 공개 트래커가 아니면 auth_env"))
+        return out
+    try:
+        me = fetch(f"{base}/rest/api/{v}/myself", headers)
+        out.append((True, "자격 증명이 통한다" + (" (계정 확인됨)" if isinstance(me, dict) and me else "")))
+    except CollectError as e:
+        out.append((False, str(e)))
+    return out
 
 
 # ---------------------------------------------------------------- 변환
@@ -336,6 +442,10 @@ def _cloud_changelog(base: str, key: str, headers: dict, fetch) -> list[dict]:
 
 
 def collect(p, cfg: dict, source: dict, patterns, state: dict, fetch=http_fetch) -> Result:
+    if fetch is http_fetch:
+        opener = opener_for(source)
+        if opener is not _OPENER:
+            fetch = functools.partial(http_fetch, opener=opener)
     name = source.get("name") or "jira"
     done = {s.lower() for s in source.get("done_statuses", ["Resolved", "Closed", "Done", "완료", "해결됨"])}
     comments = source.get("comments", True)

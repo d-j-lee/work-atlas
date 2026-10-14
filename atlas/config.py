@@ -62,6 +62,10 @@ DEFAULTS: dict = {
                "category_recent_days": 730,  # 흐름은 최근 이 기간에 끝난 일로 (0 이면 끝난 일 전체)
                "category_basis_min": 30},    # 그 기간에 끝난 일이 이보다 적으면 가장 최근에 끝난 이만큼까지 넓힌다
     "context": {"max_lines": 40, "hook_min_confidence": 0.5},
+    # 보존 기한 (atlas/retention.py — atlas harvest 가 빌드 전에 집행). 0 이면 지우지 않는다. 결정은 policy.md §2 '캐시 보존'
+    "retention": {"excerpt_days": 0, "excerpt_days_by_system": {}, "llm_cache_days": 0, "report_days": 0},
+    # 사용 중 효용 (atlas/usage.py) — 훅·맥락의 제안을 data/usage/ 에 남겨 반영률을 잰다. holdout 은 알리지 않고 기록만 할 비율(0~0.5)
+    "usage": {"record": True, "holdout": 0.0, "min_sessions": 20},
     # LLM 작업 (atlas/llm/). 기본은 아무것도 보내지 않는다 — 사내에서 승인한 백엔드만 켠다(policy.md §1). 예산의 결정은 §4
     "llm": {"backend": "none",          # none · claude · command
             "model": "",                # 비우면 백엔드 기본

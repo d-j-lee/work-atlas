@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
@@ -18,6 +19,42 @@ from typing import Iterable, Iterator
 
 import jsonschema
 import yaml
+
+# Windows 에서 콘솔 없이(pythonw · 작업 스케줄러) 돌 때 자식 프로세스(git · claude)가 콘솔 창을 띄우지 않게 — 다른 OS 는 빈 값
+NO_WINDOW: dict = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {}
+
+
+def rooted(path: str) -> bool:
+    """절대 경로인가 — Windows 에서 드라이브 없이 / · \\ 로 시작하는 경로(Python 3.13 은 절대로 보지 않는다)도 절대로 본다."""
+    return Path(path).is_absolute() or str(path).startswith(("/", "\\"))
+
+
+def real_path(path) -> Path:
+    """있는 데까지는 실제 경로로(심볼릭 링크 · Windows 8.3 짧은 이름 RUNNER~1 을 푼다), 없는 나머지는 그대로 붙인다."""
+    p = Path(os.path.abspath(path))
+    tail: list[str] = []
+    while not p.exists() and p.parent != p:
+        tail.append(p.name)
+        p = p.parent
+    try:
+        p = p.resolve()
+    except (OSError, RuntimeError):
+        pass
+    for name in reversed(tail):
+        p = p / name
+    return p
+
+
+def relative_inside(path, root) -> str | None:
+    """root 안의 파일이면 root 기준 POSIX 상대 경로, 밖이거나 root 자체면 None. Windows 는 대소문자 · 짧은 이름을 가리지 않는다."""
+    try:
+        rel = os.path.relpath(real_path(path), real_path(root))
+    except ValueError:                                              # 다른 드라이브
+        return None
+    first = rel.replace("\\", "/").split("/")[0]
+    if rel == os.curdir or first == os.pardir or os.path.isabs(rel):
+        return None
+    return Path(rel).as_posix()
 
 REPO = Path(__file__).resolve().parents[1]
 RESERVED = ("unknown", "residual")

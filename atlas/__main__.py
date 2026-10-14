@@ -10,6 +10,10 @@ import sys
 from . import __version__
 
 COMMANDS: dict[str, tuple[str, str]] = {
+    # 시작·운영
+    "init": ("atlas.init", "처음 설정 — 저장소의 git 기록에서 이슈 키 접두·식별자·저장소를 읽어 atlas.toml 초안"),
+    "harvest": ("atlas.harvest", "주간 수확 — 수집 → 빌드 → 채점 → 보존 기한 → 수확 리포트 (무인 실행용, 조용히·실패만 알림)"),
+    "schedule": ("atlas.harvest:schedule", "수확을 정기 실행으로 — Windows 작업 스케줄러(PowerShell) · cron · launchd 설정을 출력"),
     # 수집 → 상관
     "collect": ("atlas.collect", "소스에서 관측을 모은다 (git · jira · claude-code · workspace)"),
     "ingest": ("atlas.ingest", "외부 수집기가 낸 관측 JSONL 을 검증해 덧붙인다"),
@@ -34,6 +38,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     # 검증·관리
     "eval": ("atlas.evaluate", "시간 분할 효용 평가 (기준선 대비)"),
     "check": ("atlas.check", "무결성 검사 (커밋 전 훅 · CI)"),
+    "usage": ("atlas.usage", "사용 중 효용 — 훅·맥락의 제안이 실제로 반영됐나 (보류군과 비교)"),
     "doctor": ("atlas.doctor", "점검 — 지금 무엇이 되고 무엇이 빠졌고 다음에 무엇을 할지 (아무것도 바꾸지 않는다)"),
     "gen-schema": ("atlas.schema_gen", "codebook.yaml → annotation.schema.json"),
 }
@@ -63,10 +68,11 @@ def main(argv: list[str] | None = None) -> int:
     if name not in COMMANDS:
         print(f"알 수 없는 명령: {name}\n\n{usage()}", file=sys.stderr)
         return 2
-    module = importlib.import_module(COMMANDS[name][0])
+    target, _, func = COMMANDS[name][0].partition(":")
+    module = importlib.import_module(target)
     from .config import ConfigError
     try:
-        return int(module.main(rest) or 0)
+        return int(getattr(module, (func + "_main") if func else "main")(rest) or 0)
     except ConfigError as e:
         print(f"[설정 오류] {e}", file=sys.stderr)
         return 2

@@ -50,7 +50,8 @@ $ atlas context --issue ZOOKEEPER-4990 --path zookeeper-server/src/main/java/org
 | Claude (일을 받을 때) | **사용 스킬**: 위 맥락으로 트리아지 브리프를 내고, 예측과 사람의 판정을 기록한다 · **MCP 서버**(선택) |
 | Claude (작업 폴더에서) | **작업 공간**: 일 하나에 폴더 하나. 작업 CLAUDE.md 가 작업 기록(`WORK.md`)과 맥락 파일을 세션마다 불러오고, 비슷한 과거 작업에 그때의 작업 기록 위치를 붙인다. 끝낼 때 남긴 회고가 다음 일의 맥락이 된다 → [`WORKSPACE.md`](WORKSPACE.md) |
 | 사람 (일의 모양을 볼 때) | **업무 지도**: HTML 한 장 — 카테고리 트리와 카테고리마다 흐름 그림 · 단계별 머문 시간 · 참여자 순서 · 관계도 · 참조점 · 접점, 그리고 핫스팟 · 동반 변경 · AI 세션 · 데이터 상태 · **업무 안내서**: 같은 내용의 Markdown + Mermaid — 위키에 올린다 |
-| 사람 (매주) | **주간 요약**(LLM, 선택): 경고 · 세대 변화 · 카테고리 움직임 · 수신함을 3~7개 항목으로 · **카탈로그 · 점검**(`atlas doctor`): 지금 이 지식을 얼마나 믿을 수 있나, 무엇이 빠졌나 |
+| 사람 (매주) | **주간 수확**(무인, `atlas harvest` · 정기 실행 `atlas schedule`): 수집 → 보존 기한 → 빌드 → 채점, 실패 · 경고 · 세대 변화 · 쓰임 · 확인 질문 5건 이내를 리포트 한 장으로 · **주간 요약**(LLM, 선택) · **카탈로그 · 점검**(`atlas doctor`): 지금 이 지식을 얼마나 믿을 수 있나, 무엇이 빠졌나 |
+| 사람 (쓰임을 볼 때) | **쓰임 실측**(`atlas usage`): 훅 · 맥락이 낸 제안이 실제 일에서 반영됐나. 일부 세션에서 알리지 않는 보류군을 두면 "훅이 행동을 바꾸나"까지 잰다 |
 | LLM (선택, 승인된 백엔드만) | 카테고리 해설 · 주간 요약 · 이름 제안 · 작업 기록 초안 · 주석. 수치는 사실 id 자리표시로만 쓰고 보여 줄 때 지금 값으로 채운다. 근거 · 숫자 출처 검증을 통과한 문장만 싣고, 사람이 틀렸다고 판정한 것은 내린다. 백엔드가 없으면 대화 세션에 프롬프트를 붙이고 답을 들인다(같은 검증) |
 
 채널마다 누가 무엇을 언제 보나, 그림 읽는 법, LLM 의 원칙과 비용은 [`CHANNELS.md`](CHANNELS.md).
@@ -79,9 +80,9 @@ Apache commons-lang·ZooKeeper 의 git + Jira 로, 과거만 보고 배운 뒤 �
 ## 빠른 시작
 
 ```bash
-pip install -e .                       # Python 3.11+. MCP 서버를 쓰려면 pip install "mcp>=1.2"
-cp atlas.example.toml atlas.toml       # 소스·이슈 키·나의 식별자. 비밀값은 환경 변수 '이름'만
-atlas doctor                           # 무엇이 되고 무엇이 빠졌나 (환경 · 설정 · 방법 · 데이터 · 소비 · LLM)
+pip install -e .                       # Python 3.11+. MCP 서버를 쓰려면 pip install "mcp>=1.2". 오프라인 설치는 BOOTSTRAP 준비 2
+atlas init --repo ~/src/server --jira-url https://jira.company.example   # git 기록에서 atlas.toml 초안 (또는 atlas.example.toml 을 복사)
+atlas doctor --online                  # 무엇이 되고 무엇이 빠졌나 — --online 은 Jira(사내 CA · 프록시 · 토큰) · claude 연결까지
 atlas collect all                      # git · Jira · Claude Code · 작업 폴더 → data/observations (읽기 전용, 증분)
 atlas build                            # 상관 → 마이닝(업무 카테고리 포함) → 카탈로그 → 업무 지도 · 안내서 (매번 처음부터)
 atlas catalog                          # 데이터 상태와 경고
@@ -91,6 +92,10 @@ atlas llm status                       # LLM 작업 — 백엔드 · 이번 달 
 atlas hook --print-settings            # Claude Code 훅 설정 → ~/.claude/settings.json 에 합친다
 atlas work new ABC-123                 # 작업 폴더: WORK.md · CLAUDE.md · CONTEXT.md (WORKSPACE.md)
 atlas eval --cutoff 2026-01-01 --horizon-days 90   # 내 저장소에서 효용 평가
+atlas harvest                          # 주간 수확 한 번 (수집 → 보존 기한 → 빌드 → 채점 → 리포트)
+atlas schedule                         # 정기 실행 설정을 출력 (Windows 작업 스케줄러 · launchd · cron) — 붙여 넣어 등록
+atlas usage                            # 훅 · 맥락이 낸 제안이 실제로 반영됐나
+atlas llm bench --sample 8 --max-usd 3 # LLM 을 켜기 전 내 데이터에서 실측 (백엔드를 승인했으면)
 ```
 
 사내 도입은 [`BOOTSTRAP.md`](BOOTSTRAP.md) 의 단계별 프롬프트를 따른다(트랙 A 최소 경로 → 트랙 B).
@@ -137,7 +142,7 @@ flowchart LR
 | [`BOOTSTRAP.md`](BOOTSTRAP.md) | 사내 Claude Code에 붙여 넣는 단계별 프롬프트 |
 | [`WORKSPACE.md`](WORKSPACE.md) | 작업 공간 — 일 하나에 폴더 하나, 파일 역할·작업 기록·수명, Claude Code 와 atlas 에 맞물리는 법 |
 | [`CLAUDE.md`](CLAUDE.md) | 사내 인스턴스에서 AI가 지킬 쓰기 권한과 규칙 |
-| [`method/`](method) | 정본 방법 — 코드북·업무 카테고리 정의(`categories.yaml`)·데이터 계약(`schema.md`, JSON 스키마)·정책·프롬프트(재도출 · LLM 작업)·사용 스킬·작업 폴더 템플릿 |
+| [`method/`](method) | 정본 방법 — 코드북·업무 카테고리 정의(`categories.yaml`)·데이터 계약(`schema.md`, JSON 스키마)·정책·프롬프트(재도출 · LLM 작업)·사용 스킬·작업 폴더 템플릿·사내 수집기 골격(`recipes/collector_template.py`) |
 | [`tests/`](tests) | 엔진 테스트 (합성 데이터) |
 | [`CHANGELOG.md`](CHANGELOG.md) | 버전과 설계 결정 |
 
@@ -154,25 +159,27 @@ flowchart LR
 
 - **개인 성과 측정 도구가 아니다.** 사람은 역할(self·bot·unknown)로만 남고, 결함 귀속과 업무 분포는 원형 단위 집계로만 낸다.
 - **원천 시스템에 쓰지 않는다.** 수집기·훅·MCP·LLM 작업은 읽기만 한다. 관측 로그에 쓰는 것은 예측·판정을 남기는 `atlas record` 하나뿐이다. LLM 출력은 관측이 아니다 — 캐시와 채널에만 간다. 사람의 작업 폴더에는 `atlas work` 를 부를 때만 쓴다 — 사람이나 그 작업을 하는 Claude 가 부를 때(새 작업의 파일 · 맥락 파일 · 종료 표시).
-- **git·Jira·Claude Code·작업 폴더 밖의 커넥터는 없다.** 메신저·메일·위키 등은 사내 수집기가 관측 계약에 맞춰 내고 `atlas ingest` 로 넣는다.
+- **git·Jira·Claude Code·작업 폴더 밖의 커넥터는 없다.** 메신저·메일·위키 등은 사내 수집기가 관측 계약에 맞춰 내고 `atlas ingest` 로 넣는다 — 계약을 지켜 주는 수집기 도구(`atlas.collect.sdk.Kit`)와 골격을 준다.
 - **인과를 말하지 않는다.** 함께 바뀐 파일·실천과 결과·카테고리의 흐름은 연관이다.
 - **LLM 이 숫자를 지어내게 두지 않는다.** 기본 백엔드는 none(아무것도 보내지 않음)이고, 켜도 수치는 계산이 낸다.
 
 ## 상태
 
-- **v2.2 (2026-10-13).** 업무 카테고리와 소비 채널 — 카테고리마다 흐름 · 병목 · 순서 · 관계 · 참조점 · 접점, 업무 지도 · 안내서 · 맥락 · MCP 에 같은 지식, 근거 검증을 거치는 LLM 작업 층, `atlas doctor`([`CHANNELS.md`](CHANNELS.md)).
-  - 테스트 235개(합성 데이터, Python 3.11·3.13). 독립 코드 검토 일곱 번, 수정마다 넣은 변이 217종 중 216종을 잡는다(나머지 1종은 동작이 같은 변이).
-  - 공개 실데이터 평가: commons-lang·ZooKeeper, 관측 약 10만 줄. 카테고리 · LLM 층을 더한 뒤에도 평가 결과는 바이트 단위로 같다. 흐름 그림의 Mermaid 383개가 실제 파서로 읽힌다.
-- v2.1 — 작업 공간 통합: 작업 폴더를 네 번째 관측원으로([`WORKSPACE.md`](WORKSPACE.md)).
+- **v2.3 (2026-10-15).** 실제 업무에 들이기 — 설정 초안(`atlas init`) · 사내망 점검(`doctor --online`: 사내 CA · 프록시 · Python 3.13 엄격 검사) · 무인 주간 수확과 정기 실행(Windows 작업 스케줄러) · 보존 기한 집행 · 쓰임 실측(보류군) · 사내 수집기 도구 · LLM 실측(`atlas llm bench`).
+  - LLM 실측(공개 데이터, Claude Code 로그인 + `--safe-mode`, `claude-sonnet-5-5`): ZooKeeper 해설 8장 모두 통과, 문장을 버린 답 7 → 2(검증기 · 프롬프트 손질 뒤), 재표집 일치 0.823, 8장 + 재표집 3회 $0.32 · 중앙 9.3초. commons-lang 4장 모두 통과 · 버림 0 · $0.13 → [`CHANNELS.md`](CHANNELS.md) §3.7.
+  - 테스트 276개(합성 데이터, Python 3.11·3.13). 독립 코드 검토 아홉 번, 누적 변이 278종 중 276종을 잡는다(나머지 2종은 동작이 같은 변이).
+  - 공개 실데이터 평가: commons-lang·ZooKeeper, 관측 약 10만 줄 — [`EVALUATION.md`](EVALUATION.md).
+- v2.2 — 업무 카테고리와 소비 채널, 근거 검증을 거치는 LLM 작업 층([`CHANNELS.md`](CHANNELS.md)). v2.1 — 작업 공간 통합([`WORKSPACE.md`](WORKSPACE.md)).
 - **확인하지 않은 것** `[미확인]`
   - 사내 데이터·한국어 텍스트에서의 품질
-  - 실제 Jira Cloud 응답 (합성 응답으로만 시험)
-  - 훅이 실제 작업 행동을 바꾸는지
+  - 실제 Jira Cloud 응답 (합성 응답으로만 시험) · 실제 사내 프록시(NTLM 등) — 사내 CA 는 로컬 사설 CA 로 3.13 엄격 검사만 실측
+  - Windows 실기 — 작업 스케줄러 등록 · `pythonw` · 콘솔 창 없는 자식 프로세스 · 오프라인 휠 설치는 코드 · 테스트로만 확인(휠 내려받기는 실측)
+  - 훅이 실제 작업 행동을 바꾸는지 — 이제 보류군(`[usage] holdout`)으로 잴 수 있다. 사내 세션이 양쪽 20개씩 쌓여야 판단한다
   - 의미 층(원형)의 효용 — 사내에서 사람 판정 20건이 쌓여야 판정한다
   - 작업 기록이 비슷한 작업 찾기를 낫게 하는지 — 공개 데이터에 작업 폴더가 없다. 사내에서 `atlas eval` 로 잰다
-  - 실제 LLM 호출로 낸 해설 · 요약 · 주석의 품질과 안정성 — 가짜 백엔드와 대화 세션 import 로만 시험했다. 사내에서 사람 판정과 `atlas llm stability` 로 잰다
+  - 실제 LLM 해설 · 요약 · 주석의 **품질**(맞는 말인가) — 통과율 · 버림 · 안정성 · 비용은 공개 데이터로 쟀지만 사람 판정은 아직 없다. 주석 · 주간 요약 · 한국어 사내 텍스트는 실측하지 않았다. 사내에서 `atlas llm bench` 와 사람 판정으로 잰다
   - 업무 카테고리의 흐름이 상태가 많은 사내 워크플로에서 읽기 쉬운지
-- **다음:** 사내 인스턴스에서 A0~A2 → `atlas eval` 로 내 저장소 효용 확인 → 쓸모 있는 기능만 켜기.
+- **다음:** 사내 인스턴스에서 A0~A2(`atlas init` → `doctor --online` → 수집 · 빌드) → `atlas eval` 로 내 저장소 효용 확인 → 쓸모 있는 기능만 켜고 `atlas schedule` 로 수확을 건다 → 몇 주 뒤 `atlas usage` 로 실제 쓰임 확인.
 
 ## 라이선스
 

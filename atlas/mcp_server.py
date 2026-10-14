@@ -41,6 +41,7 @@ def create(root: str | None = None):
     @server.tool(description="경로(저장소 루트 기준)·이슈 키·문장에 맞는 업무 지식을 근거 건수와 함께 마크다운으로 돌려준다.")
     def atlas_context(paths: list[str] | None = None, issue: str | None = None, text: str | None = None) -> str:
         ctx = context.build(p, cfg, paths or [], issue, text)
+        context.record_use(p, cfg, ctx, issue, "mcp")
         return context.render_md(ctx, int(cfg["context"]["max_lines"]))
 
     @server.tool(description="문장과 비슷한 과거 작업단위(앵커·제목·결과·소요·바꾼 파일)를 유사도 순으로 돌려준다.")

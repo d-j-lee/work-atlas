@@ -27,7 +27,7 @@ from pathlib import Path
 import yaml
 
 from . import schema_gen as gen_annotation_schema
-from .common import REPO, glob_regex, paths
+from .common import NO_WINDOW, REPO, glob_regex, paths
 
 ROOT = REPO          # main() 이 --root · ATLAS_HOME · 현재 폴더로 다시 정한다
 
@@ -87,7 +87,7 @@ def check_overlays() -> None:
 
 def check_data_untracked() -> None:
     try:
-        out = subprocess.run(["git", "ls-files", "data"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+        out = subprocess.run(["git", "ls-files", "data"], cwd=ROOT, capture_output=True, text=True, check=True, **NO_WINDOW).stdout
     except (subprocess.CalledProcessError, FileNotFoundError):
         return
     if out.strip():
@@ -103,7 +103,7 @@ TEMPLATE_ALLOWED = [
     "WORKSPACE.md", "method/workspace/*.md",
     "method/annotation.schema.json", "method/observation.schema.json", "method/codebook.yaml",
     "method/policy.md", "method/schema.md", "method/prompts/*.md", "method/skill/atlas/SKILL.md",
-    "method/categories.yaml", "CHANNELS.md",
+    "method/categories.yaml", "CHANNELS.md", "method/recipes/*.py",
     "atlas/*.py", "atlas/**/*.py", "tests/*.py",
 ]
 
@@ -175,7 +175,7 @@ def check_template() -> None:
     if "policy_version: 0" not in policy or "______" not in policy:
         errors.append(f"policy.md 가 빈칸(______)·policy_version 0 상태가 아니다 — 사내 값이 채워진 것으로 보인다. {leak}")
     try:
-        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True, **NO_WINDOW).stdout.split()
     except (subprocess.CalledProcessError, FileNotFoundError):
         warnings.append("git 을 쓸 수 없어 템플릿 허용 목록 검사를 건너뛴다")
         return

@@ -12,7 +12,7 @@ import jsonschema
 
 from ..common import append_jsonl, parse_ts, write_text
 from .backends import Backend, Reply, _money, backend_for
-from .base import PLACEHOLDER, _read_json, digest, llm_dir
+from .base import PLACEHOLDER, _read_json, digest, llm_dir, reason_kind
 from .tasks import Ctx, Item, Task
 
 def ledger_rows(p) -> list[dict]:
@@ -61,6 +61,8 @@ class Runner:
         self.backend = backend or backend_for(cfg)
         self.lim = cfg.get("llm", {})
         self.spent = 0.0
+        self.run_id = dt.datetime.now().strftime("%Y%m%d%H%M%S") + "-" + digest(str(time.time_ns()))[:6]   # 장부에서 이 실행만 고르게
+        self._held = 0
 
     def cache_key(self, task: Task, ctx: Ctx, item: Item, schema: dict, system: str) -> str:
         """같은 작업·프롬프트·스키마·모델·대상 모양이면 같은 답을 다시 쓴다. 백엔드 종류는 넣지 않는다 —
@@ -85,7 +87,8 @@ class Runner:
         return cost
 
     def ledger(self, **row):
-        append_jsonl(llm_dir(self.p) / "ledger.jsonl", {"ts": dt.datetime.now().astimezone().isoformat(timespec="seconds"), **row})
+        append_jsonl(llm_dir(self.p) / "ledger.jsonl", {"ts": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+                                                        "run": self.run_id, **row})
 
     def recent_errors(self, task: Task) -> Counter:
         since = dt.datetime.now().astimezone() - dt.timedelta(days=7)
@@ -109,6 +112,13 @@ class Runner:
 
         @contextlib.contextmanager
         def held():
+            if self._held:                                       # 이 실행이 이미 잡고 있다(실측처럼 여러 작업을 한 실행으로)
+                self._held += 1
+                try:
+                    yield
+                finally:
+                    self._held -= 1
+                return
             f.parent.mkdir(parents=True, exist_ok=True)
             try:
                 if f.exists() and time.time() - f.stat().st_mtime > 3 * 3600:
@@ -117,9 +127,11 @@ class Runner:
             except FileExistsError:
                 raise Busy(f"다른 LLM 실행이 진행 중이다 ({f}) — 끝난 뒤 다시. 남은 잠금이면 지운다") from None
             os.close(fd)
+            self._held = 1
             try:
                 yield
             finally:
+                self._held = 0
                 f.unlink(missing_ok=True)
         return held()
 
@@ -242,7 +254,7 @@ def status(p) -> dict:
     for r in cur:
         by_task.setdefault(str(r.get("task")), Counter())[str(r.get("status"))] += 1
         for x in r.get("problems") or []:
-            reasons[str(x).split(":")[0][:40]] += 1
+            reasons[reason_kind(x)] += 1
     calls = [r for r in cur if r.get("status") in ("accepted", "rejected", "error")]
     stab = [r["agreement"] for r in cur if r.get("status") == "stability" and isinstance(r.get("agreement"), (int, float))]
     cards = ((_read_json(llm_dir(p) / "category_card.json") or {}).get("cards") or {})

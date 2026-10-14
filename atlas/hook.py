@@ -73,6 +73,13 @@ def on_edit(p, cfg: dict, event: dict) -> str | None:
         return None
     edited = set(state["edited"])
     pending = [x for x in info["with"] if x["path"] not in edited]
+    if pending:                                  # 제안을 남긴다 — 나중에 반영됐는지 잰다(atlas usage). 보류군이면 알리지 않는다
+        from . import usage
+        arm = usage.arm(cfg, session)
+        usage.record(p, {"kind": "hook.edit", "session": session, "subject": rel,
+                         "suggested": [x["path"] for x in pending], "arm": arm}, cfg)
+        if arm == "held":
+            pending = []
     hot = info.get("hot") if (info.get("hot") or {}).get("strength") in ("high", "medium") else None
     if not hot and not pending:
         return None
@@ -95,6 +102,7 @@ def on_prompt(p, cfg: dict, event: dict) -> str | None:
     ctx = context.build(p, cfg, issue=keys[0], cwd=event.get("cwd"))
     if not ctx.get("issue", {}).get("known") and not ctx.get("similar"):
         return None
+    context.record_use(p, cfg, ctx, keys[0], "hook", event.get("session_id"))
     ctx["health"] = []
     return "[work-atlas] " + context.render_md(ctx, max_lines=18)
 
@@ -128,8 +136,11 @@ def on_session_start(p, cfg: dict, event: dict) -> str | None:
 
 
 def handle(event: dict, root: str | None = None) -> dict | None:
+    import os
     from . import config as configmod
     from .common import paths
+    if os.environ.get("ATLAS_LLM_CALL"):        # atlas llm 이 부른 claude 안 — LLM 입력에 맥락을 섞지 않는다(llm/backends.LLM_ENV)
+        return None
     p = paths(root)
     if not (p.root / "method" / "codebook.yaml").exists():     # 인스턴스가 아니면 아무것도 쓰지 않는다
         return None

@@ -16,7 +16,9 @@
 | 다른 AI 도구에서 | 데스크톱 · 에이전트 | MCP | `atlas mcp` | `atlas_categories` · `atlas_category` · `atlas_context` · `atlas_similar` · `atlas_catalog` |
 | 주간 점검 | 팀 | 주간 요약 | `atlas llm run weekly_digest` | 주의 · 변화 · 제안 · 질문 (근거 목록과 함께) |
 | 일을 끝낼 때 | 개발자 | 작업 기록 초안 | `atlas llm run work_draft --work .` | 문제 · 처리 · 결과 · 회고 초안 — 사람이 고쳐 `WORK.md` 로 |
-| 운영 | 운영자 | 점검 · 카탈로그 | `atlas doctor` · `atlas catalog` | 무엇이 되고 무엇이 빠졌나 · 경고와 조치 |
+| 매주 (무인) | 팀 · 운영자 | 주간 수확 리포트 | `atlas harvest` (정기 실행은 `atlas schedule`) | 실패 · 수집 · 지운 것 · 세대 변화 · 경고(새 것 표시) · 채점 · 쓰임 · 확인 질문 5건 이내 |
+| 쓰임을 볼 때 | 개발자 · 리드 | 쓰임 실측 | `atlas usage` (수확 리포트에도) | 훅의 동반 변경 후보 · 이슈 맥락의 '바꿀 파일'이 실제로 반영됐나 — 보류군이 있으면 알림 − 보류 차이와 구간 |
+| 운영 | 운영자 | 점검 · 카탈로그 | `atlas doctor`(`--online` 은 Jira · claude 연결까지) · `atlas catalog` | 무엇이 되고 무엇이 빠졌나 · 경고와 조치 · 마지막 수확 |
 
 맥락에 나오는 카테고리 줄의 예(공개 데이터 Apache ZooKeeper, 열린 이슈):
 
@@ -131,19 +133,24 @@
 |---|---|
 | 스키마 — 작업의 JSON 스키마에 맞나 | 그 답을 거절 |
 | 근거 — 문장마다 허락된 refs 가 있나(섹션 이름만은 안 된다). 해설에서 쓴 자리표시는 근거로 센다 | 그 문장을 버림 |
-| 수치 충실 — 해설: 자리표시 밖의 숫자, 숫자 낱말(열두 건 · 절반 · 대부분 · ⑫ · 十二 …) 금지. 요약 · 초안: 그 문장이 **인용한 근거**에 있는 숫자만 | 그 문장을 버림 |
+| 수치 충실 — 해설: 자리표시 밖의 숫자 금지. 수를 낱말로 쓴 것도 숫자다(열두 건 · 두세 번 · 이틀 · 두 달 · 일주일 · 오 퍼센트 · 셋 중 하나 · 반 이상 · ⑫ · ½ · 十二 …). '두 파일' 처럼 수 + 명사는 그 문장이 인용한 구체적인 근거의 수와 같을 때만. 이름 · 경로 · 제목 · 사실 이름(P90 · 최근 90일) · 글자로 시작하는 식별자(lang3 · log4j) 안의 숫자는 지어낸 것이 아니다. 요약 · 초안: 그 문장이 **인용한 근거**에 있는 숫자만 | 그 문장을 버림 |
+| 크기 낱말 — 몫을 말하는 낱말(드물다 · 소수 · 절반 · 반 · 흔하다 · 상당수 · 다수 · 대부분 …)은 같은 문장에 인용한 비율 사실의 크기 구간과 맞을 때만(구간 <5% · <15% · <35% · <65% · 그 이상). 부정 · 비교 · 옮긴 말("드물지 않다" · "절반을 웃돈다" · "대부분이라고 할 수 없다")은 그 절 끝까지 보고 버린다. "가장 흔한 흐름"(최빈)은 몫이 아니다. '자주'는 비율 사실을 인용했을 때만 맞춘다(관계 · 동반 변경은 비율이 없다). 보통 · 대개 · 주로 는 전형을 말하는 부사라 막지 않는다 | 그 문장을 버림 |
 | 표기 — 링크 · HTML · 이미지 금지 (안내서 · MCP 로 퍼지는 글이다) | 그 문장을 버림 |
 | 남은 양 — 필수 칸(해설의 문단과 주의, 초안의 문제 · 처리 · 결과)이 비면 | 그 답을 거절 |
 | 주석 — 사후 검증 R1~R4 로 강등될 값의 수를 장부에 남긴다(강등은 빌드가 한다) | 기록 |
 
 거절도 캐시와 장부에 남는다 — 같은 입력을 다시 부르지 않고, 이유를 `atlas llm status` 로 본다.
 
+자리표시를 채울 때 바로 뒤의 조사를 값에 맞춘다 — 모델은 값을 모르고 조사를 쓰기 때문이다(`{d} 로` → "21일로", `{b} 로` → "생성으로", `{s} 이/가` → "Review가", `{p} 이` → "PR이"). 숫자는 한국어로 읽은 끝소리, 약어는 글자 이름(피알 · 큐에이), 영어 낱말은 흔한 끝소리(Open · Done · Time)로 본다. 띄어 쓴 '다'는 절 끝에서만 서술격으로 붙인다("{d} 다 끝난다"의 '다'는 부사다).
+
+정규식 검증이 모든 꼴을 막지는 못한다 — 모델이 실제로 쓰는 꼴과 흔한 변형을 막고, 남는 것은 사람 판정(3.8)과 실측(3.7)이 잡는다.
+
 ### 3.4 백엔드 (`atlas.toml [llm] backend`)
 
 | 백엔드 | 무엇 | 메모 |
 |---|---|---|
 | `none` (기본) | 부르지 않는다 | `prompt` · `import` 로 사람이 대화 세션을 백엔드로 쓴다 |
-| `claude` | Claude Code 헤드리스. `claude --bare -p --output-format json --json-schema … --tools "" --strict-mcp-config --no-session-persistence --system-prompt … --max-budget-usd …` 를 **빈 임시 폴더에서** 부르고 입력은 표준 입력으로 넣는다. 답은 `structured_output`, 비용은 `total_cost_usd` | `--bare` 는 로그인(OAuth)을 읽지 않는다 — `ANTHROPIC_API_KEY` · `apiKeyHelper` · Bedrock · Vertex · Foundry 자격 증명이 필요하다. `bare = false` 면 사용자 설정의 훅 · `CLAUDE.md` 가 끼어들 수 있다. Windows 에서 `claude.cmd` 로 부르면 명령 줄 상한(8,191자)에 걸릴 수 있어 넘으면 미리 멈춘다 — 게이트웨이나 WSL 을 쓴다 |
+| `claude` | Claude Code 헤드리스. `claude <격리> -p --output-format json --json-schema … --tools "" --strict-mcp-config --no-session-persistence --system-prompt-file … --max-budget-usd …` 를 **빈 임시 폴더에서** 부르고 입력은 표준 입력으로 넣는다. 답은 `structured_output`, 비용은 `total_cost_usd`, 모델은 `modelUsage` 에서 비용이 가장 큰 것(보조 호출의 작은 모델이 아니라) | 격리: `bare = true`(기본) 면 `--bare` — 로그인(OAuth)을 읽지 않아 `ANTHROPIC_API_KEY` · `apiKeyHelper` · Bedrock · Vertex · Foundry 자격 증명이 필요하다. 로그인(구독)뿐이면 `bare = false` — CLI 가 `--safe-mode` 를 알면 그것으로 CLAUDE.md · 훅 · MCP · 스킬을 끈다(모르면 환경 변수 `ATLAS_LLM_CALL` 로 atlas 훅만 비킨다). `atlas doctor --online` 이 어느 격리인지 보여 준다. 시스템 프롬프트는 파일로 넘겨 Windows `claude.cmd` 의 명령 줄 상한(8,191자)을 피한다 — 옛 CLI 가 `--system-prompt-file` 을 모르면 한 번 인라인으로 다시 부르고, 그래도 넘으면 미리 멈춘다. 자식 프로세스는 콘솔 창 없이 띄운다 |
 | `command` | 사내 게이트웨이. 요청 JSON `{system, prompt, schema, model, max_budget_usd}` 를 표준 입력으로 받아 응답 JSON `{output, cost_usd, model}` 을 표준 출력으로 낸다 | 사내 승인 모델 · 감사 로그 · 망 분리 환경에 맞춘다 |
 
 ### 3.5 대화 세션을 백엔드로
@@ -166,7 +173,29 @@ atlas llm import category_card --key 'server / Bug' --file answer.json --model "
 - 장부 `data/llm/ledger.jsonl`: 시각 · 작업 · 대상 · 모델 · 상태(accepted · rejected · error · stability …) · 비용 · 거절 이유. `atlas llm status` 와 카탈로그의 `llm` 칸이 요약한다.
 - 안정성: `atlas llm stability <작업> --sample 3`(또는 `--share 0.15`)이 통과한 답 일부를 캐시 없이 다시 받아 같은지 잰다(주석은 분류 값 일치율 — 재주석 불일치율의 재료, 나머지는 인용 · 자리표시 집합의 자카드). 표본은 세대마다 바뀌는 결정론 표본이다 — 같은 세대에서 다시 돌리면 같은 표본.
 
-### 3.7 사람의 판정
+### 3.7 실측 — `atlas llm bench`
+
+켜기 전에(그리고 프롬프트 · 모델을 바꿀 때마다) 내 데이터에서 잰다. 해설 몇 장 + 재표집 + 주간 요약 하나를 캐시 없이 부르고, 통과율 · 문장을 버린 답 · 버린 이유 · 재표집 일치도 · 비용 · 지연과 **사람이 판정할 카드 목록**을 `data/reports/llm-bench-<시각>.md` 에 낸다. 큰 카테고리와 고르게 고른 카테고리를 섞어 고르고(같은 데이터면 같은 대상), 이 실행의 호출만 센다(장부의 `run`).
+
+```bash
+atlas llm bench --sample 8 --stability 3 --max-usd 3      # --keys 로 대상을 정하고, --model 로 모델을 바꿔 견준다
+```
+
+공개 데이터에서 잰 것(2026-10-14, Claude Code CLI 2.1.299 · `--safe-mode` + 로그인, 기본 모델 `claude-sonnet-5-5`):
+
+| 회차 | ZooKeeper 해설 8장 | 문장을 버린 답 | 재표집 일치(3건) | commons-lang 해설 4장 | 문장을 버린 답 |
+|---|---|---|---|---|---|
+| 기준(v2.2 검증기) | 7 통과 | 7 | 0.725 | 2 통과 | 2 |
+| 검증기 · 프롬프트 손질 뒤 | 8 통과 | 2 | 0.823 | 4 통과 | 0 |
+| 같은 손질, `claude-haiku-5-5` | 8 통과 | 3 | 0.63 | — | — |
+
+- 손질: 사실 이름(P90 · 최근 90일)과 식별자(lang3)를 숫자로 보지 않게, 크기 낱말을 금지에서 '구간 대조'로, 파일 이름 · 디렉터리를 근거로 인용하게. 코드 근거에 짧은 id(f1 · d1)를 주자 모델이 그 id 를 본문에 써서 오히려 나빠졌다(되돌림).
+- 남은 버림은 검증기가 옳게 막은 것이다 — 근거 비율 없는 "대부분 ZooInspector", 섹션 이름만 인용한 문장.
+- 비용 · 지연: ZooKeeper 8장 + 재표집 3회 $0.32 · 중앙 9.3초, commons-lang 4장 $0.13. 이 세션의 실측 전체 약 $2.4.
+- 그 뒤 검증기를 한 번 더 조였다(수 · 기간 · 어림 · 비율 말, 부정 · 비교, 근거 수와 맞는 수). 실측 중 통과한 문장 454개(모든 회차)를 조이기 전후 검증기로 다시 거르면 판정이 하나도 달라지지 않는다 — 실제 답을 덜 버리지도 더 버리지도 않고 구멍만 막았다.
+- 품질(맞는 말인가)은 이 표가 말하지 않는다 — 리포트의 카드 목록을 사람이 읽고 `atlas record llm-feedback` 으로 판정한다(3.8).
+
+### 3.8 사람의 판정
 
 ```bash
 atlas record llm-feedback --key 'server / Bug' --verdict wrong --note "Closed 는 릴리스 정리라 병목이 아니다"
@@ -176,7 +205,7 @@ atlas record llm-feedback --key 'server / Bug' --verdict wrong --note "Closed �
 - `wrong` 이면 다음 빌드부터 그 해설을 보이지 않는다. 다시 받은 해설은 내용이 달라 판정을 물려받지 않는다.
 - 카탈로그 경고(문턱은 `atlas.toml [policy]`, 의미는 `method/policy.md` §7): 이번 달 호출 5건 이상에서 근거 검증 통과율이 `llm_accept_min`(70%) 미만, 사람 판정 10건 이상에서 쓸모 있음이 `llm_useful_min`(60%) 미만, 월 예산의 `llm_budget_warn`(80%) 초과. 운영 경고라 맥락 첫 줄에는 나오지 않는다(`area: llm`).
 
-### 3.8 설정 예
+### 3.9 설정 예
 
 ```toml
 [llm]
@@ -186,7 +215,8 @@ max_usd_per_call = 0.5
 max_usd_per_run = 5.0
 max_usd_per_month = 50.0
 limit_per_run = 20
-auto = ["category_card"]      # atlas build 가 이어서 돌린다 (work_draft 는 무인으로 돌지 않는다)
+# bare = false                # 로그인(구독) 인증뿐일 때 — --safe-mode 로 격리
+auto = ["category_card"]      # atlas build · harvest 가 이어서 돌린다 (work_draft 는 무인으로 돌지 않는다). 켜기 전에 bench
 ```
 
 ## 4. 파일
@@ -200,5 +230,8 @@ auto = ["category_card"]      # atlas build 가 이어서 돌린다 (work_draft 
 | `data/reports/guides/` | 업무 안내서 — README(목차 · 미분류 · 경로 규칙 후보) + 최상위 영역마다 한 장. 생성물 표시가 있는 지난 파일은 빌드가 지운다 | `data/` |
 | `data/llm/` | 캐시 · 장부 · 해설 카드 | `data/` |
 | `data/reports/<주>-digest.md` | 주간 요약 | `data/` |
+| `data/reports/<날짜>-harvest.md` · `data/state/harvest-last.json` | 주간 수확 리포트 · 마지막 수확 상태 | `data/` |
+| `data/reports/llm-bench-<시각>.md` | LLM 실측 리포트 | `data/` |
+| `data/usage/<연-월>.jsonl` | 쓰임 기록 — 훅 · 맥락의 제안 (관측이 아니다) | `data/` |
 | `inbox/<시각>-category-names.md` | 이름 제안 | 수신함 (사내 인스턴스) |
 | `<작업 폴더>/WORK.draft.md` | 작업 기록 초안 (생성물 — 관측하지 않는다) | 작업 폴더 |

@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import shutil
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import yaml
@@ -206,7 +208,8 @@ class RecordEventTest(Base):
         self.assertEqual(rc, 2, "트리아지 없는 판정은 dry-run 에서도 거부해야 한다")
 
     def test_cli_dry_run_writes_nothing(self):
-        self.assertEqual(record_event.main(["--root", str(self.root), "--dry-run", "self-report", "--text", "가상 작업"]), 0)
+        with redirect_stdout(io.StringIO()):                              # 콘솔 인코딩(Windows cp1252 등)과 무관하게
+            self.assertEqual(record_event.main(["--root", str(self.root), "--dry-run", "self-report", "--text", "가상 작업"]), 0)
         self.assertFalse(self.p.observations.exists())
 
     def test_cli_rejects_with_exit_2(self):
@@ -383,7 +386,8 @@ class RenderTest(Base):
         units = [dict(self.unit, wu_id="wu:chat:운영-1"), dict(self.unit, wu_id="wu:chat:배포-1")]
         self.p.stitched.parent.mkdir(parents=True)
         self.p.stitched.write_text("".join(json.dumps(u, ensure_ascii=False) + "\n" for u in units), encoding="utf-8")
-        self.assertEqual(render_wu.main(["--root", str(self.root)]), 0)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(render_wu.main(["--root", str(self.root)]), 0)
         index = json.loads((self.p.render / "index.json").read_text(encoding="utf-8"))
         files = {v["file"] for v in index.values()}
         self.assertEqual(len(files), 2, "한글이 지워져도 파일 이름이 겹치면 안 된다")

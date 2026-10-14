@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 from . import config as configmod
-from .common import path_filter, paths, read_jsonl, units_path
+from .common import NO_WINDOW, path_filter, paths, read_jsonl, relative_inside, rooted, units_path
 from .mine import MODEL_FORMAT, text as textmod
 
 
@@ -90,18 +90,17 @@ class Model:
 
 def repo_relative(path: str, cwd: str | None = None) -> str:
     """절대 경로면 그 파일이 든 git 저장소 루트 기준으로 바꾼다. 실패하면 받은 그대로."""
-    pth = Path(path)
-    if not pth.is_absolute():
+    if not rooted(path):
         return path.replace("\\", "/")
+    pth = Path(path)
     base = pth.parent if pth.parent.exists() else Path(cwd or ".")
-    out = subprocess.run(["git", "-C", str(base), "rev-parse", "--show-toplevel"], capture_output=True,
+    out = subprocess.run(["git", "-C", str(base), "rev-parse", "--show-toplevel"], capture_output=True, **NO_WINDOW,
                          text=True, encoding="utf-8", errors="replace")
     if out.returncode == 0 and out.stdout.strip():
-        try:
-            return pth.resolve().relative_to(Path(out.stdout.strip()).resolve()).as_posix()
-        except ValueError:
-            pass
-    return path
+        rel = relative_inside(pth, out.stdout.strip())
+        if rel:
+            return rel
+    return pth.as_posix()                    # 저장소를 못 찾았다 — 뒷부분 맞춤(find_path)이 되게 / 로 (Windows 의 \ 도)
 
 
 def find_path(model: Model, path: str, scope: str | None = None) -> tuple[str, str] | None:
@@ -317,6 +316,14 @@ def build(p, cfg: dict, paths_: list[str] = (), issue: str | None = None, text: 
     return out
 
 
+def record_use(p, cfg: dict, ctx: dict, issue: str | None, via: str, session: str | None = None) -> None:
+    """이슈 맥락이 낸 '바꿀 가능성이 큰 파일'을 남긴다 — 그 이슈의 작업단위가 실제로 바꾼 파일과 맞춰 본다(atlas usage)."""
+    files = [x["path"] for x in ctx.get("likely_files") or []]
+    if issue and files:
+        from . import usage
+        usage.record(p, {"kind": "context.issue", "issue": issue, "via": via, "session": session, "suggested": files}, cfg)
+
+
 def _hours(h) -> str:
     if h is None:
         return "-"
@@ -444,6 +451,7 @@ def main(argv: list[str] | None = None) -> int:
     p = paths(args.root)
     cfg = configmod.load(p.root)
     ctx = build(p, cfg, args.path, args.issue, args.text, args.scope, work=args.work)
+    record_use(p, cfg, ctx, args.issue, "cli")
     if args.format == "json":
         print(json.dumps(ctx, ensure_ascii=False, indent=2))
     else:
