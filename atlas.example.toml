@@ -47,6 +47,9 @@ base_url = "https://jira.company.example"
 jql = "project = PROJ"          # cloud 는 범위가 있어야 한다 (예: project = PROJ AND updated >= -365d)
 auth_env = "ATLAS_JIRA_AUTH"    # datacenter: 개인 액세스 토큰 · cloud: "email:api_token"
 done_statuses = ["Resolved", "Closed", "Done", "완료", "해결됨"]
+# 사내망 — 막히면 atlas doctor --online 이 원인과 할 일을 말한다. 프록시는 HTTPS_PROXY · NO_PROXY 를 따른다(Basic 인증만)
+# ca_bundle = "C:/certs/company-root.pem"   # 사내 CA 로 TLS 오류가 날 때. Windows 인증서 저장소에 회사 루트가 있으면 필요 없다
+# tls_strict = false            # Python 3.13+ 가 규격을 다 지키지 않는 옛 사내 CA 를 거절할 때만 — 그 엄격 검사만 끈다(검증은 그대로)
 # comments = true               # 댓글 사건을 모을지 (본문은 발췌 캐시로만)
 # page_size = 100
 # excerpt = true                # 요약·설명·댓글 발췌를 남길지 — 회사 정책이 본문 처리를 막으면 false
@@ -122,6 +125,8 @@ hook_min_confidence = 0.5       # 편집 순간 자동으로 넣는 동반 변�
 backend = "none"                # none · claude(Claude Code 헤드리스) · command(사내 게이트웨이)
 # model = ""                    # 비우면 백엔드 기본
 # bare = true                   # claude: --bare (밀폐 실행 — ANTHROPIC_API_KEY · apiKeyHelper · Bedrock/Vertex/Foundry 인증 필요)
+#                               # 로그인(구독) 인증만 있으면 false — CLI 가 --safe-mode 를 알면 그것으로 CLAUDE.md · 훅 · MCP · 스킬을 끈다
+#                               # (atlas doctor --online 의 'claude 격리' 줄로 확인). 어느 쪽이든 도구는 끄고 빈 임시 폴더에서 부른다
 # claude_path = ""              # claude 실행 파일 (비우면 PATH)
 # command = ["company-llm-gateway", "--json"]   # command: 요청 JSON 을 표준 입력으로 받아 답 JSON 을 표준 출력으로 내는 명령
 # timeout_s = 300
@@ -129,4 +134,18 @@ max_usd_per_call = 0.5          # 호출 하나의 상한 (claude 는 --max-budg
 max_usd_per_run = 5.0           # atlas llm run · build 한 번의 상한
 max_usd_per_month = 50.0        # 달 합계 상한 — 장부(data/llm/ledger.jsonl)로 센다. 값을 모르는 호출은 호출 상한으로 센다
 # limit_per_run = 20            # 한 번에 새로 부를 대상 수 (캐시 적중은 세지 않는다)
-# auto = ["category_card"]      # atlas build 가 이어서 돌릴 작업. 사람 판정이 쌓이기 전에는 비워 둔다
+# auto = ["category_card"]      # atlas build · harvest 가 이어서 돌릴 작업. 켜기 전에 atlas llm bench 로 통과율 · 비용을 잰다
+
+[retention]
+# 보존 기한(method/policy.md §2) — atlas harvest 가 빌드 전에 집행한다. 0 은 지우지 않는다. 관측(L0)은 지우지 않는다(본문이 없다)
+excerpt_days = 0                # 발췌 캐시(본문) — 사건 시각 기준. 지우면 입력 문서 캐시도 지우고, 그 일의 LLM 주석은 낡음이 된다
+llm_cache_days = 0              # LLM 답 캐시(data/llm/cache)
+report_days = 0                 # 생성 리포트(data/reports — 업무 지도 · 안내서 · 수확 리포트 · 실측)
+# [retention.excerpt_days_by_system]   # 원천 시스템별로 더 짧게(또는 길게)
+# chat = 90
+
+[usage]
+# 쓰임 실측(atlas usage) — 훅 · 맥락이 낸 제안이 실제로 반영됐나. 기록은 data/usage/ (관측이 아니다)
+record = true                   # false 면 기록하지 않는다(보류도 하지 않는다)
+holdout = 0.0                   # 이 비율의 세션에서 동반 변경 후보를 알리지 않고 기록만 — 훅이 행동을 바꾸는지 잴 때(policy.md §3, 상한 0.5)
+min_sessions = 20               # 알림 · 보류 양쪽 세션이 이만큼 모여야 차이를 판단한다

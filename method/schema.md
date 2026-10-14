@@ -1,4 +1,4 @@
-# 데이터 계약 — 관측 · 작업단위 · 모델 · 업무 카테고리 · LLM 출력 · 오버레이 · 사용 기록 · 골든셋 · 매니페스트
+# 데이터 계약 — 관측 · 작업단위 · 모델 · 업무 카테고리 · LLM 출력 · 쓰임 기록 · 수확 상태 · 오버레이 · 사용 기록 · 골든셋 · 매니페스트
 
 > 규칙과 이유의 정본은 이 문서다. **기계 계약**은 둘이다 — 관측 한 줄은 `observation.schema.json`(손으로 관리), LLM 주석 출력은 `annotation.schema.json`(`codebook.yaml` 에서 생성).
 > 두 계약은 엔진(`atlas/common.py` 의 `check_observation`, `atlas/validate.py`)이 실행으로 집행하고, `tests/` 가 그 집행을 시험한다.
@@ -11,15 +11,16 @@ schema_version: 1
 | 무엇 | 경로 | git |
 |---|---|---|
 | L0 관측 | `data/observations/YYYY-MM.jsonl` | 제외 (사내 저장 경로) |
-| 발췌 캐시 | `data/excerpts.jsonl` — 수집기가 만들고 policy §2 보존 기한으로 지운다 | 제외 |
-| 수집 증분 상태 · 훅 세션 기록 | `data/state/` | 제외 |
+| 발췌 캐시 | `data/excerpts.jsonl` — 수집기가 만들고 `atlas harvest` 가 `[retention]` 기한(policy §2)으로 지운다 | 제외 |
+| 수집 증분 상태 · 훅 세션 기록 · 수확 상태 | `data/state/` — 수확은 `harvest-last.json` · `harvest.log`(1MB 넘으면 `.log.1` 하나만 남긴다) · `harvest.lock` (아래 "수확 상태") | 제외 |
+| 쓰임 기록 | `data/usage/<연-월>.jsonl` (아래 "쓰임 기록") | 제외 |
 | L1 작업단위 | `data/units/stitched.jsonl`(상관) → `annotated.jsonl`(주석) → `current.jsonl`(사후 검증 통과본) · `stitch_report.json` · 주석 응답 캐시 `data/llm/cache/annotate/` | 제외 |
 | L2 마이닝 모델 · 카탈로그 | `data/model/` (아래 "L2 모델") | 제외 (WU·커밋 단위 근거) |
 | 업무 지도 · 업무 안내서 | `data/reports/atlas-<세대>.html` · `data/reports/guides/` (카테고리별 Markdown + Mermaid, `README.md` 가 색인) | 제외 |
 | 업무 카테고리 정의 | `method/categories.yaml` (아래 "업무 카테고리") | 포함 (템플릿에서는 사람이 채우는 칸이 비어 있다) |
 | LLM 캐시 · 장부 · 해설 | `data/llm/` (아래 "LLM 출력") · 주간 요약 `data/reports/<연>-W<주>-digest.md` | 제외 |
 | WU 입력 문서 | `data/render/<wu>-<해시8>.md`, `data/render/index.json` | 제외 |
-| 주간 수확 리포트 | `data/reports/` | 제외 |
+| 주간 수확 리포트 · LLM 실측 리포트 | `data/reports/<날짜>-harvest.md` · `data/reports/llm-bench-<시각>.md` | 제외 |
 | 작업 폴더의 맥락 파일 · 작업 기록 초안 | 사람의 작업 폴더 `CONTEXT.md`(`atlas work new · context`) · `WORK.draft.md`(`atlas llm run work_draft --write` — 없을 때만 쓴다. 사람이 골라 `WORK.md` 로 옮긴다). 첫 줄에 생성물 표시가 있으면 수집하지 않는다 | 사람의 폴더 |
 | L2 모델·L3 카드 (원형 단위 집계) | `out/model/`, `out/cards/`, `out/MANIFEST.json` | 포함 |
 | 오버레이 | `overlays/*.yaml` | 포함 |
@@ -95,6 +96,22 @@ schema_version: 1
 | 작업 폴더에서 내용을 읽는 파일은 작업 기록(제목·문제·결과·회고·처리)과 첫 결정 기록(본문)의 앞부분뿐이다. 나머지는 이름으로 역할을 세기만 한다. 관측하지 않는 것: 첫 줄에 생성물 표시가 있는 `CONTEXT.md` · `scratch/`·`tmp/`·도구 폴더 · 저장소 사본(`.git` 이 있는 폴더 — `repos_inside` 로 셈. 작업 폴더 자체가 워크트리면 맨 위 파일과 역할 폴더만 센다) · 비밀값으로 보이는 파일(열지 않고 `sensitive` 로 셈). 경로는 루트 기준으로만 남기고 루트 자체는 남기지 않는다. front-matter 값의 절대·홈 경로는 마지막 이름만 남긴다 | 요약의 요약 금지(N3) · 필요한 만큼만 · 루트·홈 경로에는 계정 이름이 들어간다 |
 | AI 세션의 편집 파일: 저장소에서 연 세션은 그 저장소 루트 기준이고 밖의 파일은 버린다. 저장소가 아닌 폴더(작업 폴더)에서 연 세션은 파일마다 그 파일이 든 저장소의 루트 기준이다. 작업 공간 안의 파일은 `paths` 에 넣지 않고 `work_edits` 로 센다 — 작업 폴더 안에 받아 둔 저장소 사본의 파일은 예외로 코드다 | 세션 경로에는 저장소 구분이 없어 남의 저장소 파일이 엉뚱한 커밋과 겹친다. 작업 폴더에서 연 세션은 `--add-dir` 로 고친 저장소 파일을 잃지 않게. 작업 기록이 코드 경로로 섞이지 않게 |
 | 동기화 머지는 `sync_merge: true` 로 표시하고 `commits` 를 남기지 않는다. 상관도 이 머지의 커밋을 작업으로 세지 않는다. 판정은 두 겹이다. **메시지**: 들여온 브랜치가 메인라인(`master·main·develop·dev·trunk·release…`, 원격 접두만 허용)이다 — GitHub PR 은 받는 쪽이 메시지에 없으므로 소유자가 이 저장소의 원격 소유자(소스 설정 `owner`, 없으면 `upstream`·ref 의 원격·`origin` 순)일 때만이고, 같은 이름 브랜치로 들인 MR(포크의 main → main)은 작업이며, 커밋·태그를 메인라인이 아닌 브랜치로 들인 머지도 MR 이 아니면 동기화다. **구조**: 둘째 부모가 수집하는 ref(기본: 원격 기본 브랜치)의 첫 부모 사슬 위에 있다. 둘 다 아니면 작업이다 | 메인라인의 남의 커밋이 그 이슈의 작업단위로 들어가지 않게. 메시지 형식은 호스팅마다 달라 구조 판정이 형식과 무관하게 받친다. 모를 때는 진짜 작업을 버리지 않는 쪽으로 |
+
+### 사내 수집기가 내는 사건
+
+엔진이 수집기를 갖지 않은 소스(메신저 · 메일 · 위키 · 배포 · 리뷰 · 캘린더)는 사내에서 수집기를 만들어 JSONL 로 내고 `atlas ingest` 로 넣는다.
+`atlas.collect.sdk.Kit` 이 아래 규칙을 지켜 주고, 골격은 `method/recipes/collector_template.py`(내보낸 JSON → `chat.message`)다.
+`atlas ingest … --dry-run` 이 계약 위반과 함께 연결 미리보기(아는 이슈 키 · 단서 없음 비율)를 낸다.
+
+| 칸 | 규칙 | 이유 |
+|---|---|---|
+| `kind` | `<system>.<사건>` — `system` 은 위 목록에서(예: `chat.message` · `wiki.page_edit` · `mail.message` · `deploy.release` · `review.comment`) | 접두와 `source.system` 이 같아야 한다 |
+| `obs_id` | `<system>:<인스턴스 이름 해시 6자>:<부분들의 해시 16자>` — 같은 사건은 늘 같은 id | 다시 돌려도 중복이 생기지 않는다. 사내 시스템 이름 · 채널 이름이 id 에 드러나지 않게 |
+| `objects` | 그릇(스레드 · 채널 · 페이지 · 메일 스레드)의 id 는 해시(`type` 은 그대로, `url` 은 뺀다). 엔진이 다른 소스와 잇는 객체 `issue · commit · mr · obs · ai_session · work` 는 그대로 | 그릇 이름은 사람 이름을 품기 쉽다(DM · 개인 채널). 같은 값은 같은 해시라 스레드로 묶인다 |
+| 해시 키 | 기본은 인스턴스 이름을 소금으로 친 SHA-256 — 눈으로 읽히지 않을 뿐 후보를 넣어 보면 되짚을 수 있다. 환경 변수 `ATLAS_HASH_KEY` 가 있으면 HMAC(되짚을 수 없다). 한 번 정하면 바꾸지 않는다 | 바꾸면 모든 id 가 바뀌어 같은 사건이 두 번 들어온다 |
+| `keys.issue_keys` | 본문에서 `[keys]` 규칙으로 결정론으로 뽑는다(수집기가 아는 키를 더할 수 있다) | 다른 소스와 이어지는 유일한 다리 — 키가 없으면 고아 관측이 된다 |
+| `actor_role` | 식별자(이메일 · 계정)는 `[identity]` 판정에만 쓰고 남기지 않는다 → `self · bot · <역할> · unknown` | 개인 식별자 금지 |
+| 본문 | 관측에는 넣지 않는다. `text` 는 발췌 캐시로만 가고 자르고 가린다(비밀값 · 연락처 · 홈 경로) | 1차 방어는 '필요한 만큼만' |
 
 ### 사용 기록 — `source.system: "atlas"`
 
@@ -283,9 +300,9 @@ LLM 은 계산된 사실을 말로 옮기고, 엔진이 검증한 것만 채널�
 | 파일 | 형식 |
 |---|---|
 | `cache/<작업>/<캐시 키>.json` | `{key, task, version, item, status, output, problems, meta}`. `status` 는 `accepted · rejected` 만 남긴다 — 오류는 캐시하지 않는다(다음에 다시, 7일에 두 번 오류면 물러선다). 캐시 키 = 작업 · 버전 · 시스템 프롬프트 · 출력 스키마 · 모델 · 대상의 모양의 해시(백엔드 종류는 넣지 않는다 — 대화 세션에서 들인 답을 자동 실행이 그대로 쓴다) |
-| `ledger.jsonl` | 호출마다 한 줄: `ts · task · version · item · key · backend · model · status`(`accepted · rejected · error · skipped_budget · stability`) `· cost_usd · cost_estimated · seconds · problems`. 덧붙이기만. 깨진 줄은 건너뛰고 읽는다. 시각은 시각으로 비교한다 |
+| `ledger.jsonl` | 호출마다 한 줄: `ts · task · version · item · key · backend · model · status`(`accepted · rejected · error · skipped_budget · stability`) `· cost_usd · cost_estimated · seconds · problems · run`(실행 하나의 id — 실측이 자기 호출만 센다). 덧붙이기만. 깨진 줄은 건너뛰고 읽는다. 시각은 시각으로 비교한다 |
 | `category_card.json` | `{task, cards: {<카테고리 키>: {shape, paragraphs, watch, digest, model, task_version, created}}}` — 문장 안의 수치는 `{사실 id}` 자리표시로만 있고 보여 줄 때 지금 값으로 채운다. `shape` 가 지금 카테고리의 모양(흐름 · 크기 구간)과 다르면 보이지 않는다 |
-| `.lock` | 실행 하나씩. 3시간 넘은 잠금은 죽은 실행이 남긴 것으로 본다 |
+| `.lock` | 실행 하나씩. 3시간 넘은 잠금은 죽은 실행이 남긴 것으로 본다. 같은 프로세스 안에서는 다시 잡을 수 있다(실측 `atlas llm bench` 가 여러 작업을 한 잠금 안에서 돈다) |
 
 | 규칙 | 이유 |
 |---|---|
@@ -293,6 +310,26 @@ LLM 은 계산된 사실을 말로 옮기고, 엔진이 검증한 것만 채널�
 | 주석(`annotate`)의 출력은 기존 계약(`annotation.schema.json` · 사후 검증 R1~R4)을 그대로 따른다. 다시 주석할지는 입력 해시 · 레시피 · 코드북 버전 · 코드북 내용 · 프롬프트로 정한다 | 코드북이나 프롬프트가 바뀌면 옛 주석을 새 기준으로 착각하지 않게 |
 | 이름 제안은 수신함으로만, 작업 기록 초안은 `WORK.draft.md` 로만 간다(경로 규칙 후보는 LLM 이 아니라 엔진이 `categories.json` 에 낸다). 정본(`method/` · `WORK.md`)에 직접 쓰지 않는다 | 사람이 고른다 |
 | L0 에 쓰는 것은 사람의 판정(`atlas.llm_feedback`)뿐이다. LLM 출력 자체는 관측이 아니다 | L0 에 해석을 넣지 않는다 |
+
+## 쓰임 기록 — `data/usage/<연-월>.jsonl`
+
+훅 · 맥락이 낸 제안과 그것이 실제 일에서 반영됐는지(`atlas usage`, 수확 리포트의 '쓰임'). **관측(L0)이 아니다** — 세대 id 를 흔들지 않고, 지워도 지식은 그대로다.
+
+| `kind` | 칸 |
+|---|---|
+| `hook.edit` | `ts · session · subject`(고친 파일, 저장소 기준) `· suggested`(아직 안 바꾼 동반 변경 후보) `· arm`(`shown` · `held`) |
+| `context.issue` | `ts · issue · via`(`hook` · `cli` · `mcp`) `· session`(있으면) `· suggested`(이슈 맥락의 '바꿀 가능성이 큰 파일') |
+
+| 규칙 | 이유 |
+|---|---|
+| 덧붙이기만. 시각을 읽을 수 없거나 시간대가 없는 줄은 건너뛴다. `[usage] record = false` 면 쓰지 않는다(보류도 하지 않는다) | 훅을 막지 않는다. 기록 없이 보류하면 잴 수 없는 손해만 남는다 |
+| 보류군(`[usage] holdout`)은 세션 id 의 해시로 정한다 — 세션 단위, 상한 0.5. 세션을 모르면 보류하지 않는다 | 한 세션 안에서 알림과 보류가 섞이면 차이가 흐려진다. 차이의 구간은 세션 군집 부트스트랩이라 배정 단위와 같아야 한다 |
+| 결과는 관측과 맞춰 셈한다: `hook.edit` 는 그 세션에서 고쳤거나 그 세션이 든 작업단위의 이후 커밋이 바꿨으면 반영. `context.issue` 는 그 이슈 작업단위의 이후 커밋 대비 정밀도 · 재현율(같은 (이슈, 세션) — 세션이 없으면 같은 날 — 은 한 번) | 사람 판정 없이 매주 잴 수 있는 쓰임의 지표 |
+| 아직 모르는 것은 미확정, 세션 · 이슈가 35일 안에 안 잡히거나 이슈가 180일 넘게 안 끝나면 만료, 끝났는데 이후 커밋이 없으면 '바뀐 것 없음'으로 따로 센다 | 분모를 숨기지 않는다 |
+
+## 수확 상태 — `data/state/harvest-last.json`
+
+`{started, finished, ok, failures, warnings, report}` — 마지막 `atlas harvest` 의 결과. 단계(수집 · 보존 기한 · 빌드 · 채점 · 쓰임 · 리포트)마다 실패를 잡아 `failures` 에 적고, 어느 단계가 깨져도(리포트를 못 써도) 이 파일은 쓴다. `ok` 가 거짓이면 종료 코드 1. `warnings` 는 다음 수확이 '새 경고'를 가리는 데 쓴다. `atlas doctor` 가 읽어 실패 · 오래됨(`policy.stale_days`)을 알린다.
 
 ## 오버레이 — `overlays/*.yaml`
 

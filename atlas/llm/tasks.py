@@ -168,6 +168,22 @@ def card_magnitudes(e: dict) -> dict:
             "files": [f["path"] for f in (e.get("code") or {}).get("files", [])[:3]]}
 
 
+IDENT = re.compile(r"[A-Za-z][A-Za-z0-9_]*[0-9][A-Za-z0-9_]*")
+
+
+def ident_tokens(strings) -> list[str]:
+    """입력의 이름·경로·제목에서 글자로 시작해 숫자를 품은 식별자(lang3 · log4j · Base64 · P90) — 숫자가 아니라 이름이다.
+    숫자로 시작하는 것(10x · 30s · 2배)은 양일 수 있어 풀어 주지 않는다 — 제목 통째로 인용할 때만 지운다."""
+    return sorted({t for s in strings if s for t in IDENT.findall(str(s))})
+
+
+def fact_magnitudes(e: dict) -> dict[str, int | None]:
+    """사실 id → 크기 구간 — 크기 낱말(드물다·절반·대부분)을 그 사실과 함께 쓸 때 맞는지 본다. 비율 사실만."""
+    m = card_magnitudes(e)
+    return {"problem_rate": m["problem_rate"], "reopen_rate": m["reopen_rate"], "abandoned_rate": m["abandoned_rate"],
+            "ai_share": m["ai_share"], "open_top": m["open_top_share"], "after_end": m["after_end_share"]}
+
+
 def card_context(e: dict, cats: dict, titles: dict) -> tuple[dict, set[str], list[str], dict]:
     """맥락(숫자 없는 것) · 허락된 refs · 숫자를 품어도 되는 이름들 · 모양."""
     from ..diagram import group_related
@@ -196,13 +212,19 @@ def card_context(e: dict, cats: dict, titles: dict) -> tuple[dict, set[str], lis
         "flow": {"main": fl.get("main", []), "variants": [v["trace"] for v in e.get("variants", [])[:3]],
                  "stages_longest_first": [x["stage"] for x in e.get("dwell", []) if x["n"] >= 3][:4],   # bottleneck 과 같은 기준
                  "loops": [f"{x['from']} → {x['to']}" for x in fl.get("edges", []) if x.get("loop")]},
-        "related": related, "code": {"dirs": dirs, "files": files}, "people": people, "cases": cases, "curated": curated,
+        "related": related, "people": people, "cases": cases, "curated": curated,
+        "code": {"dirs": dirs, "files": [{"name": f.rsplit("/", 1)[-1], "path": f} for f in files]},
     }
-    allowed = set(SECTIONS) | {c["ref"] for c in cases} | {x["key"] for x in related} | {c["ref"] for c in curated}
-    literals = ([e["name"], e["key"], *chain] + [x["name"] for x in related] + dirs + files + [c["ref"] for c in cases]
+    # 코드도 근거로 인용할 수 있다(볼 곳) — 파일 이름 · 경로 · 디렉터리 그대로. 본문에 쓰는 이름과 같아 사람이 읽기 좋다
+    allowed = (set(SECTIONS) | {c["ref"] for c in cases} | {x["key"] for x in related} | {c["ref"] for c in curated}
+               | set(dirs) | set(files) | {f.rsplit("/", 1)[-1] for f in files})
+    literals = ([e["name"], e["key"], *chain] + [x["name"] for x in related] + dirs + files
+                + [n for x in dirs + files for n in [x.rstrip("/").rsplit("/", 1)[-1]] if re.search(r"[A-Za-z가-힣]", n)]
+                + [c["ref"] for c in cases]
                 + [c["title"] for c in cases] + fl.get("main", []) + [s for v in e.get("variants", []) for s in v["trace"]]
                 + [x["stage"] for x in e.get("dwell", [])] + [c["title"] for c in curated] + [c["where"] for c in curated]
                 + [str(v) for x in people["configured"] for v in x.values()])
+    literals += ident_tokens(literals)
     shape = {"key": e["key"], "name": e["name"], "main": fl.get("main", []), "variants": context["flow"]["variants"],
              "longest": context["flow"]["stages_longest_first"][:2], "loops": context["flow"]["loops"],
              "related": [x["key"] for x in related], "dirs": dirs[:3], "cases": sorted(c["ref"] for c in cases),
@@ -238,20 +260,26 @@ class CategoryCard(Task):
     def items(self, ctx, args):
         cats = ctx.cm["categories"]
         out = []
+        from .check import MAGNITUDE_HINT
         for e in self.targets(ctx, args):
             facts = card_facts(e)
             context, allowed, literals, shape = card_context(e, cats, ctx.titles)
+            mags = fact_magnitudes(e)
+            literals = literals + ident_tokens(v[0] for v in facts.values()) + sorted(
+                {t for v in facts.values() for t in re.findall(r"[가-힣]+ ?[0-9]+일", v[0])})     # 'P90' · '최근 90일' 같은 사실 이름
+            hint = lambda k: f" (크기 낱말: {MAGNITUDE_HINT[mags[k]]})" if mags.get(k) in MAGNITUDE_HINT else ""
             prompt = ("아래는 업무 카테고리 하나의 사실·맥락·참조 목록이다. 시스템 지시대로 JSON 으로 답한다.\n\n"
-                      "## 사실 (본문에는 {id} 로만 쓴다)\n" + "\n".join(f"- {k}: {v[0]} = {v[1]}" for k, v in facts.items())
+                      "## 사실 (본문에는 {id} 로만 쓴다)\n" + "\n".join(f"- {k}: {v[0]} = {v[1]}{hint(k)}" for k, v in facts.items())
                       + "\n\n## 맥락\n```json\n" + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
                       + "\n```\n\n## refs 에 쓸 수 있는 것\n" + ", ".join(sorted(allowed | set(facts))) + "\n")
             out.append(Item(e["key"], prompt, {**shape, "facts": sorted(facts)},
-                            {"allowed": allowed | set(facts), "facts": set(facts), "literals": literals}))
+                            {"allowed": allowed | set(facts), "facts": set(facts), "literals": literals, "magnitudes": mags}))
         return out
 
     def check(self, ctx, item, out):
         c = item.check
-        kw = {"allowed": c["allowed"], "facts": c["facts"], "literals": c["literals"], "generic": set(SECTIONS)}
+        kw = {"allowed": c["allowed"], "facts": c["facts"], "literals": c["literals"], "generic": set(SECTIONS),
+              "magnitudes": c.get("magnitudes")}
         paras, w1 = _stmts(out.get("paragraphs"), **kw)
         watch, w2 = _stmts(out.get("watch"), **kw)
         problems = w1 + w2
@@ -271,8 +299,94 @@ class CategoryCard(Task):
         return [f"{len(accepted)}개 카드 → {f}"]
 
 
+# 자리표시 바로 뒤의 조사 — 값을 모르고 쓴 조사를 값에 맞춘다("21일 로" → "21일로", "생성 로" → "생성으로", "이/가" → 하나로)
+JOSA = re.compile(r"(\s?)(이/가|가/이|은/는|는/은|을/를|를/을|과/와|와/과|\(으\)로|으로/로|로/으로|이\(가\)|은\(는\)|을\(를\)"
+                  r"|\(이\)다|\(이\)라는|\(이\)라고|\(이\)나|\(이\)며|\(이\)고"
+                  r"|이었다|였다|이지만|지만|이라는|이라고|이다|이며|이고|이나|으로|에서|에|의|도|만|까지|부터|보다|은|는|이|가|을|를|과|와|로"
+                  r"|라는|라고|다|며|고)(?![가-힣])")
+_BOTH = {"이/가": "이", "가/이": "이", "이(가)": "이", "은/는": "은", "는/은": "은", "은(는)": "은", "을/를": "을", "를/을": "을",
+         "을(를)": "을", "과/와": "과", "와/과": "과", "(으)로": "로", "으로/로": "로", "로/으로": "로",
+         "(이)다": "이다", "(이)라는": "이라는", "(이)라고": "이라고", "(이)나": "이나", "(이)며": "이며", "(이)고": "이고"}
+_FIXED = {"에서", "에", "의", "도", "만", "까지", "부터", "보다"}           # 받침과 무관한 조사 — 띄어 쓴 것만 붙인다
+# 띄어 쓴 '다' 는 부사일 수 있다("{x} 다 끝난다") — 서술격 '다' 는 절 끝에만 오므로 문장부호·끝 앞에서만 조사로 본다.
+# 띄어 쓴 '이' 는 지시어("{x} 이 단계")일 수도 있지만 실측 답 25건이 모두 조사였다("{n} 이 쌓였다") — 조사로 본다
+_SPACED_WORD = {"다"}
+_CLAUSE_END = re.compile(r"\s*(?:[.,!?;:…)\]』」\"'·—–]|$)")
+_PAIRS = {"이": ("이", "가"), "가": ("이", "가"), "은": ("은", "는"), "는": ("은", "는"), "을": ("을", "를"), "를": ("을", "를"),
+          "과": ("과", "와"), "와": ("과", "와"), "이었다": ("이었다", "였다"), "였다": ("이었다", "였다")}
+_COPULA = ("다", "며", "고", "지만", "라는", "라고", "나")
+
+
+def final_sound(value: str) -> tuple[bool, bool]:
+    """값을 읽을 때 끝소리 — (받침이 있나, 그 받침이 ㄹ 인가). 괄호 설명은 떼고 본다. 숫자는 한국어로 읽은 끝소리."""
+    v = value.strip()
+    while True:
+        w = re.sub(r"\s*\([^()]*\)$", "", v)
+        if w == v or not w:
+            break
+        v = w
+    if not v:
+        return False, False
+    c = v[-1]
+    if "가" <= c <= "힣":
+        jong = (ord(c) - 0xAC00) % 28
+        return jong != 0, jong == 8
+    if c.isdigit():
+        digits = v.replace(",", "")
+        m = re.search(r"[0-9]+$", digits)
+        num = m.group() if m else c
+        if c == "0" and num.strip("0"):
+            return True, False                     # 십 · 백 · 천 · 만
+        return {"0": (True, False), "1": (True, True), "3": (True, False), "6": (True, False), "7": (True, True),
+                "8": (True, True)}.get(c, (False, False))
+    if c.isascii() and c.isalpha():
+        word = re.search(r"[A-Za-z]+$", v).group()
+        if word.isupper() and (len(word) <= 3 or not re.search(r"[AEIOU]", word)):
+            return c in "LMNR", c in "LR"          # 약어는 글자 이름으로 읽는다 — PR(피알) · URL(유알엘) · QA(큐에이) · HTTP
+        low = word.lower()
+        if low.endswith(("l", "le")):
+            return True, True
+        if low.endswith(("m", "n", "ng", "me", "ne")):
+            return True, False                     # Open · Done(던) · Time(타임)
+        return False, False                        # Closed · Resolved · Patch — 외래어는 끝에 '으' 가 붙어 받침이 없다
+    return False, False                            # % (퍼센트) 등
+
+
+def josa(value: str, particle: str) -> str:
+    particle = _BOTH.get(particle, particle)
+    if particle in _FIXED:
+        return particle
+    batchim, rieul = final_sound(value)
+    if particle in ("으로", "로"):
+        return "으로" if batchim and not rieul else "로"
+    if particle in _PAIRS:
+        return _PAIRS[particle][0 if batchim else 1]
+    stem = particle[1:] if particle.startswith("이") and particle[1:] in _COPULA else particle
+    return ("이" + stem) if batchim else stem
+
+
+def _particle(text: str, pos: int):
+    j = JOSA.match(text, pos)
+    if j and j.group(1) and j.group(2) in _SPACED_WORD and not _CLAUSE_END.match(text, j.end()):
+        return None
+    return j
+
+
 def fill(text: str, facts: dict[str, tuple[str, str]]) -> str:
-    return PLACEHOLDER.sub(lambda m: facts[m.group(1)][1] if m.group(1) in facts else m.group(0), text)
+    out, pos = [], 0
+    for m in PLACEHOLDER.finditer(text):
+        out.append(text[pos:m.start()])
+        k = m.group(1)
+        if k not in facts:
+            out.append(m.group(0))
+            pos = m.end()
+            continue
+        value = facts[k][1]
+        j = _particle(text, m.end())
+        out.append(value + (josa(value, j.group(2)) if j else ""))
+        pos = j.end() if j else m.end()
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def rendered_cards(p, cm: dict, titles: dict | None = None) -> dict:

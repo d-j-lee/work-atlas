@@ -60,17 +60,22 @@ flowchart LR
 | `collect/jira` | DC v2·Cloud v3. 생성 당시 라벨 복원, 상태·해결·변경·연결·댓글. 재시도·증분 | REST → L0 |
 | `collect/claude_code` | 세션 요약 → `ai_session.session`. 편집 파일(그 파일의 저장소 기준)·테스트 실행·커밋·오류·압축·세션을 연 작업 폴더 | `~/.claude/projects` → L0 |
 | `collect/workspace` | 작업 폴더 → `workspace.snapshot`. front-matter·파일 역할별 개수·작업 기록 발췌. 비밀값 파일·생성물·버릴 것은 관측하지 않는다 | 작업 공간 루트 → L0 |
-| `ingest` | 외부 수집기 JSONL 검증 후 덧붙임 | JSONL → L0 |
+| `collect/sdk` | 사내 수집기 도구 `Kit` — 역할 판정 · 결정론 키 · 발췌만 · 그릇 이름 해시(선택 HMAC) · 결정론 obs_id. 골격은 `method/recipes/collector_template.py` | 사내 소스 → JSONL |
+| `ingest` | 외부 수집기 JSONL 검증 후 덧붙임. `--dry-run` 은 연결 미리보기(아는 이슈 키 · 단서 없음 비율) | JSONL → L0 |
 | `store` | 검증·중복 제거·월별 덧붙이기·발췌 캐시·증분 상태 | — |
 | `stitch` | 객체 중심 상관, 사후 신호, 결과 계산, as_of 재생 | L0 → `stitched.jsonl` + 보고 |
 | `render` · `validate` | LLM 입력 문서 · 주석 사후 검증 (R1~R4) | L1 → 문서 · `current.jsonl` |
 | `mine/*` | corpus(경로 정규화) → cochange · hotspot · process · practice · moves · text · **category** | current + L0 → `data/model/` |
 | `taxonomy` | 업무 카테고리 정의(`method/categories.yaml`) 읽기 · 모양 검사 · 작업단위를 영역 사슬과 국면에 놓기 · 접점·참조점 물려주기 | 정의 + WU 사실 → 배치 |
 | `catalog` | 소스 신선도·커버리지·고아·세대 변화·AI 세션 메타 → 경고와 권하는 조치 | 전부 → `catalog.json` |
-| `context` · `hook` · `mcp_server` · `report` · `guide` | 소비 — Claude 용 맥락(카테고리 줄 포함), 편집·프롬프트 순간 주입, MCP, 사람용 HTML(업무 지도), 카테고리별 Markdown(안내서) | `data/model` → 출력 |
+| `context` · `hook` · `mcp_server` · `report` · `guide` | 소비 — Claude 용 맥락(카테고리 줄 포함), 편집·프롬프트 순간 주입, MCP, 사람용 HTML(업무 지도), 카테고리별 Markdown(안내서). 맥락 · 훅 · MCP 는 낸 제안을 쓰임 기록에 남긴다 | `data/model` → 출력 |
 | `catview` · `diagram` | 채널들이 같은 말을 하게 하는 카테고리 읽기(요약 · 다음 단계 · 병목 · 접점) · 결정론 그림(SVG · Mermaid) | `categories.json` → 글 · 그림 |
-| `llm/` | LLM 작업 — `check`(근거 · 자리표시 · 숫자 · 표기) · `backends`(none · claude · command) · `tasks`(해설 · 주석 · 주간 요약 · 초안 · 이름 제안) · `runner`(캐시 · 장부 · 예산 · 잠금 · 안정성) | 모델 · 입력 문서 → `data/llm/` · `annotated.jsonl` · 리포트 · 수신함 |
-| `doctor` | 설정 · 방법 · 데이터 · 소비 · LLM 상태 점검. 아무것도 바꾸지 않는다 | 전부 → 화면 |
+| `llm/` | LLM 작업 — `check`(근거 · 자리표시 · 숫자 · 크기 낱말 · 표기) · `backends`(none · claude(bare · safe-mode) · command) · `tasks`(해설 · 주석 · 주간 요약 · 초안 · 이름 제안 · 조사 맞춤) · `runner`(캐시 · 장부 · 예산 · 잠금 · 안정성) · `bench`(실측) | 모델 · 입력 문서 → `data/llm/` · `annotated.jsonl` · 리포트 · 수신함 |
+| `doctor` | 설정 · 방법 · 데이터 · 소비 · LLM · 마지막 수확 점검. `--online` 은 Jira(서버 정보 → 자격 증명) · claude 격리까지. 아무것도 바꾸지 않는다 | 전부 → 화면 |
+| `init` | git 기록(커밋 제목 · 브랜치 · user.email/name · 원격 기본 브랜치)과 Claude Code 기록 폴더 이름에서 `atlas.toml` 초안. 덮어쓰지 않는다 | 저장소 → 설정 초안 |
+| `harvest` (`atlas harvest` · `atlas schedule`) | 주간 수확 — 수집 → 보존 기한 → 빌드(LLM auto) → 채점 → 리포트, 단계마다 실패를 잡고 상태 파일은 언제나. 정기 실행 설정(Windows 작업 스케줄러 · launchd · cron)을 출력만 | 전부 → 수확 리포트 · `harvest-last.json` |
+| `retention` | 보존 기한 집행 — 발췌 캐시(시스템별) · LLM 답 캐시 · 리포트. 관측은 지우지 않는다. 낡게 될 주석 수를 센다 | `[retention]` → 지운 수 |
+| `usage` (`atlas usage`) | 훅 · 맥락의 제안 기록과 결과 맞춤 — 반영률 · 정밀도 · 재현율, 보류군 차이(세션 군집 부트스트랩) | `data/usage/` + L0 · L1 → 지표 |
 | `record` · `score` · `similar` | 예측·판정·LLM 출력 판정 기록(유일한 사람 쓰기 경로), 채점, 원형 기준 유사 사례 | L0·current |
 | `workspace` (`atlas work`) | 작업 폴더 규칙(무엇이 작업인가 · 파일 역할 · 작업 기록 읽기) · 새 작업 · CONTEXT.md · 종료 · 위생 목록. 사람이 부를 때만 작업 폴더에 쓴다 | 작업 공간 ↔ `data/model` |
 | `evaluate` | 시간 분할 효용 평가(기준선·부트스트랩) | L0 → 평가 JSON |
@@ -83,10 +88,11 @@ flowchart LR
 |---|---|---|---|
 | `data/observations/YYYY-MM.jsonl` | collect · ingest · record | 전부 | 밖 |
 | `data/excerpts.jsonl` | 수집기(가린 뒤 자른 본문) | stitch · mine · render | 밖 |
-| `data/state/` | 수집 증분 · 훅 세션 기록 · 훅 오류 로그 | 수집기 · 훅 | 밖 |
+| `data/state/` | 수집 증분 · 훅 세션 기록 · 훅 오류 로그 · 수확 상태 · 로그 · 잠금 | 수집기 · 훅 · harvest · doctor | 밖 |
+| `data/usage/<연-월>.jsonl` | 훅 · 맥락 · MCP (관측이 아니다 — 세대 id 와 무관) | usage · harvest | 밖 |
 | `data/units/{stitched,annotated,current}.jsonl` · `stitch_report.json` | stitch · `atlas llm run annotate` · validate | mine · score · similar · context | 밖 |
 | `data/model/claims.jsonl` · `paths.json` · `text_index.json` · `categories.json` · `generation.json` · `catalog.json` · `build.json` · `history/` | mine · catalog · build | context · hook · MCP · report · guide · llm | 밖 |
-| `data/reports/atlas-<세대>.html` · `guides/` · `<주>-digest.md` | report · guide · llm | 사람 | 밖 |
+| `data/reports/atlas-<세대>.html` · `guides/` · `<주>-digest.md` · `<날짜>-harvest.md` · `llm-bench-<시각>.md` | report · guide · llm · harvest · bench | 사람 | 밖 |
 | `data/llm/` (캐시 · `ledger.jsonl` · `category_card.json`) | `atlas llm` | report · guide · MCP · catalog | 밖 |
 | `method/categories.yaml` · `method/prompts/*.md` | 사람 | mine(세대 id 의 입력) · llm(내용 해시가 캐시 키) | 안 |
 | 작업 폴더의 `WORK.draft.md` | `atlas llm run work_draft --write` | 사람 | 사람의 폴더 — 수집하지 않는다 |
@@ -188,7 +194,12 @@ gitGraph
 | **카테고리 흐름은 끝난 일의 해결까지, 최근 730일(모자라면 최근 30건)** | 열린 일은 흐름이 덜 끝나 "생성 → 끝"으로 보이고(ZK 에서 흐름의 30%), 해결 뒤 정리(릴리스 때의 Closed, 중앙 80일)는 병목처럼 보인다. 둘은 따로 센다. 워크플로가 바뀌면 옛 흐름이 섞이지 않게 최근으로, 몇 건으로 그린 흐름이 우연에 휘둘리지 않게 최소 표본을 둔다 | ZK · LANG 실측 · 테스트 `test_flow_ends_at_resolution_and_marks_rework` |
 | **가장 흔한 길은 실제 변형이다** — 굵은 이음을 이어 붙이지 않는다 | 이음마다 지나는 일이 달라, 이어 붙인 길은 아무도 따르지 않은 길일 수 있다(ZK 108개 흐름 중 4개, 0건 지지) | 독립 검토 · 테스트 `test_main_path_is_a_real_variant_and_reaches_end` |
 | **LLM 은 말만 한다 — 해설의 수치는 사실 id 자리표시, 보여 줄 때 지금 값** | 숫자를 LLM 이 쓰면 지어내거나 낡는다. 자리표시면 매주 빌드해도 맞고, 카드는 모양(흐름 · 병목 · 관련 · 사례 · 수치 구간)이 바뀔 때만 다시 쓴다(비용). 숫자 낱말 · 링크 · 근거 없는 문장은 버린다 | 시연에서 "재오픈 3%"(실제 4%) 문장이 걸렸다 · `tests/test_llm.py` |
-| **LLM 백엔드는 기본 none, 대화 세션도 백엔드다** (prompt · import) | 사내 데이터를 보낼 곳은 사내가 정한다(CLAUDE.md 규칙 8). 승인 전에도 같은 검증을 거쳐 쓸 수 있어야 한다. claude 백엔드는 `--bare` · 도구 없음 · 빈 임시 폴더로 이 저장소의 CLAUDE.md · 훅이 끼지 않게 한다 | `[문서]` 헤드리스 모드 · 테스트 `test_claude_backend_is_hermetic_and_cards_render_current_numbers` |
+| **LLM 백엔드는 기본 none, 대화 세션도 백엔드다** (prompt · import) | 사내 데이터를 보낼 곳은 사내가 정한다(CLAUDE.md 규칙 8). 승인 전에도 같은 검증을 거쳐 쓸 수 있어야 한다. claude 백엔드는 도구 없음 · 빈 임시 폴더에 더해 `--bare`(API 키) 또는 `--safe-mode`(로그인 인증)로 사용자 CLAUDE.md · 훅 · 스킬이 입력에 끼지 않게 하고, 하위 프로세스에 `ATLAS_LLM_CALL` 을 둬 atlas 훅이 스스로 비킨다 | 실측 CLI 2.1.299(`--help` · 호출) · 테스트 `test_claude_backend_is_hermetic_and_cards_render_current_numbers` · `test_hook_stays_out_of_llm_calls` |
+| **해설 검증은 '금지'가 아니라 '대조'다** — 크기 낱말은 인용한 비율 사실의 구간과, 수 + 명사는 인용한 근거의 수와 맞춘다 | v2.2 처럼 크기 낱말을 모두 막으면 사람이 읽기 좋은 문장이 버려지고(실측 ZK 8장 중 7장에서 문장을 버림), 다 풀면 지어낸 크기가 샌다. 대조면 둘 다 된다 — 손질 뒤 문장을 버린 답 7 → 2, 남은 버림은 옳게 막은 것 | 공개 데이터 실측(CHANNELS.md §3.7) · 테스트 `tests/test_llm.py` |
+| **무인 수확은 한 명령이고 단계마다 실패를 잡는다 — 상태 파일은 언제나 쓴다** | 스케줄러는 종료 코드만 본다. 소스 하나 · 단계 하나의 실패가 전체를 멈추면 나머지까지 낡고, 상태를 못 남기면 실패한 줄도 모른다 | 테스트 `test_a_broken_step_still_writes_the_report_and_last_state` |
+| **쓰임은 관측이 아니다 · 보류군은 세션 단위다** | 제안 기록을 L0 에 넣으면 세대 id 가 매번 바뀌고 해석이 정본에 들어간다. 한 세션 안에서 알림과 보류가 섞이면 알린 후보가 보류한 쪽 행동에 번진다 — 배정 단위와 구간의 군집 단위를 같게 | 독립 검토 · 테스트 `TestUsage` |
+| **CI 는 Windows 에서도 돈다 · 경로는 실제 경로로 견준다** (`common.relative_inside`) | 사내 PC 는 Windows 가 많다. Linux 에서만 시험하면 8.3 짧은 이름(RUNNER~1) · 드라이브 없는 절대 경로 · `\` 구분자 · 콘솔 코드 페이지가 숨는다 | CI windows-latest 첫 실행에서 6건 실패 → 수정 · 테스트 `TestPortablePaths` |
+| **사내망 오류는 다시 시도하지 않고 원인과 할 일을 말한다** (인증서 · 이름 · 프록시 인증 · HTML 응답 · 3.13 엄격 검사) | 이런 오류는 다시 해도 같다(예전엔 1분 넘게 재시도한 뒤 실패). Python 3.13 은 규격을 다 지키지 않는 옛 사내 CA 를 거절한다 — `tls_strict = false` 는 그 검사만 끈다 | 실측: 로컬 사설 CA 로 3.13 거절 · `tls_strict = false` 통과 · 3.11 통과 · 테스트 `TestCorporateNetwork` |
 | **LLM 예산은 보수적으로 센다** — 비용을 모르면 호출당 상한, 반복 오류는 물러선다, 실행은 하나씩 | 백엔드가 비용을 알려 주지 않으면 상한이 의미 없어진다. 오류는 캐시하지 않으니 매 빌드 다시 돈을 쓴다 | 독립 검토 · 테스트 `test_unknown_cost_is_charged_as_the_per_call_cap` |
 | **MCP 는 읽기 전용이다.** `ingest` 는 사람·사용 사건(atlas·self_report)을 받지 않는다 | 사람 쓰기 경로는 `record` 하나다(METHODOLOGY 원칙 P7). 그래야 트리아지 없는 판정 같은 것이 들어오지 않는다. SDK 1.x(FastMCP)·2.x(MCPServer) 둘 다 받는다 | 실측: mcp 1.30 · 2.2 |
 | **수집기는 자격 증명을 같은 호스트의 https 에만 보낸다.** 리다이렉트가 다른 호스트나 http 로 가면 떼고, 설정이 https 가 아니면 처음부터 보내지 않는다 | urllib 은 리다이렉트에 Authorization 을 그대로 실어 보낸다 — SSO·프록시로 새지 않게 | 테스트 `test_jira_redirect_strips_auth_and_requires_https` |
@@ -196,6 +207,7 @@ gitGraph
 ## 넓히는 곳
 
 - **새 소스**: 관측 계약에 맞는 JSONL 을 내는 수집기를 어떤 언어로든 만들어 `atlas ingest` 로 넣는다. 결정론 obs_id 가 필수다.
+  - 파이썬이면 `method/recipes/collector_template.py` 를 복사해 `fetch` · `to_events` 만 고친다 — `atlas.collect.sdk.Kit` 이 역할 · 키 · 발췌 · 해시를 지킨다(`method/schema.md` "사내 수집기가 내는 사건").
   - 엔진 안에 넣으려면 `atlas/collect/<이름>.py` 에 `add_args` · `source_from_args` · `collect` 를 두고 `collect/__init__.py` 의 표에 더한다.
 - **주석(LLM)**: `atlas llm run annotate` 가 한다(백엔드는 `[llm]`). 다른 도구로 하려면 `data/render/` 문서를 읽어 `annotation.schema.json` 형식으로 주석하고 `data/units/annotated.jsonl` 에 쓴다.
   - 각 WU 의 `build.input_hash` 에 문서 해시를 넣는다.
@@ -222,7 +234,9 @@ gitGraph
 |---|---|---|
 | 줄 수준 SZZ (결함 수정 커밋의 지운 줄을 `git blame`) | 사후 귀속을 결정론 신호로 쓰고 싶을 때 | 수집 비용이 크다. 줄 수준에서도 정밀도가 보장되지 않는다(Herzig & Zeller 2013) |
 | 키 없는 커밋 군집 (시간·경로) | 고아 비율이 높고 키 습관을 바꿀 수 없을 때 | 휴리스틱 WU 가 통계를 흐린다. 먼저 키 습관을 권한다(카탈로그 제안) |
-| Stop 훅: 세션 끝에 높은 신뢰도 짝을 안 바꿨으면 상기 | 훅 힌트의 실제 효용을 판정(`record`)으로 확인한 뒤 | 잔소리가 되기 쉽다 |
+| Stop 훅: 세션 끝에 높은 신뢰도 짝을 안 바꿨으면 상기 | 훅 힌트가 행동을 바꾸는 것을 보류군(`atlas usage`)으로 확인한 뒤 | 잔소리가 되기 쉽다 |
+| 이슈 맥락의 '바꿀 파일' 줄에도 보류군 | 훅 보류군이 효과를 보인 뒤, 맥락 쪽 효과도 따로 알고 싶을 때 | 맥락은 일을 받을 때 한 번이라 표본이 작고, 숨기면 일을 받는 사람에게 바로 손해다 |
+| 쓰임 지표를 `atlas eval` 과 나란히(평가 재현율 vs 실제 재현율) | 사내 쓰임 기록이 몇 달 쌓였을 때 | 평가는 과거 분할, 쓰임은 실제 일 — 차이가 크면 평가 설계를 의심할 근거가 된다 |
 | 이슈 키 없는 프롬프트에 유사 작업 자동 주입 | 사내에서 텍스트 검색 정밀도를 확인한 뒤 | 모든 프롬프트에 끼어드는 소음 위험 |
 | 디렉터리·모듈 수준 동반 변경 | 파일 수준 응답률이 낮은 저장소 | 파일 수준 + 혼합으로 아직 충분 |
 | 한국어 형태소 분석 | 음절 바이그램 검색이 사내 데이터에서 약할 때 | 외부 의존 없이 시작한다 |

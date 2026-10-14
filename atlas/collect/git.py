@@ -26,7 +26,7 @@ import subprocess
 from pathlib import Path
 
 from . import CollectError, Result, branch_key, excerpt, is_mainline, normalize_branch, strip_trailers
-from ..common import now_iso
+from ..common import NO_WINDOW, now_iso
 
 COLLECTOR = "git@1"
 RS, US = "\x1e", "\x1f"
@@ -63,7 +63,7 @@ def source_from_args(args) -> dict | None:
 
 def _git(repo: str, *args: str) -> str:
     try:
-        out = subprocess.run(["git", "-C", repo, *args], capture_output=True, check=True)
+        out = subprocess.run(["git", "-C", repo, *args], capture_output=True, **NO_WINDOW, check=True)
     except FileNotFoundError as e:
         raise CollectError("git 실행 파일이 없다") from e
     except subprocess.CalledProcessError as e:
@@ -72,7 +72,7 @@ def _git(repo: str, *args: str) -> str:
 
 
 def default_ref(repo: str) -> str:
-    out = subprocess.run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "origin/HEAD"], capture_output=True)
+    out = subprocess.run(["git", "-C", repo, "rev-parse", "--abbrev-ref", "origin/HEAD"], capture_output=True, **NO_WINDOW)
     ref = out.stdout.decode("utf-8", "replace").strip()
     return ref if out.returncode == 0 and ref and ref != "origin/HEAD" else "HEAD"
 
@@ -87,19 +87,19 @@ def owner_from_url(url: str) -> str | None:
 def remote_owner(repo: str, ref: str) -> str | None:
     """PR 이 모이는 저장소의 소유자. GitHub PR 이 같은 저장소의 브랜치에서 왔는지 가리는 데만 쓰고 저장하지 않는다.
     포크 클론에서는 origin 이 내 포크다 — upstream 이 있으면 그것, 없으면 ref 의 원격, 그것도 아니면 origin."""
-    out = subprocess.run(["git", "-C", repo, "remote"], capture_output=True)
+    out = subprocess.run(["git", "-C", repo, "remote"], capture_output=True, **NO_WINDOW)
     remotes = out.stdout.decode("utf-8", "replace").split() if out.returncode == 0 else []
     head = ref.split("/", 1)[0] if "/" in ref else ""
     remote = next((r for r in ("upstream", head, "origin") if r and r in remotes), None)
     if remote is None:
         return None
-    out = subprocess.run(["git", "-C", repo, "remote", "get-url", remote], capture_output=True)
+    out = subprocess.run(["git", "-C", repo, "remote", "get-url", remote], capture_output=True, **NO_WINDOW)
     return owner_from_url(out.stdout.decode("utf-8", "replace")) if out.returncode == 0 else None
 
 
 def _is_ancestor(repo: str, old: str, ref: str) -> bool:
     return subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", old, ref],
-                          capture_output=True).returncode == 0
+                          capture_output=True, **NO_WINDOW).returncode == 0
 
 
 def parse_log(raw: str) -> list[dict]:

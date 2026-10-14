@@ -23,7 +23,7 @@ from pathlib import Path
 
 from . import Result, branch_key, excerpt
 from .. import workspace as ws
-from ..common import now_iso
+from ..common import NO_WINDOW, now_iso, real_path, relative_inside, rooted
 
 COLLECTOR = "claude-code@2"
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
@@ -56,7 +56,7 @@ def _toplevel(directory: str | Path | None, cache: dict) -> str | None:
     if key not in cache:
         top = None
         if Path(directory).is_dir():
-            out = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True,
+            out = subprocess.run(["git", "-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True, **NO_WINDOW,
                                  text=True, encoding="utf-8", errors="replace")
             if out.returncode == 0 and out.stdout.strip():
                 top = out.stdout.strip()
@@ -76,10 +76,9 @@ def _parent_dir(pth: Path) -> Path | None:
 def _file_root(path: str, cwd_root: str | None, cache: dict) -> str | None:
     """세션 폴더가 저장소가 아닐 때(작업 폴더 등) 편집한 파일이 든 저장소의 루트 — --add-dir 로 고친 저장소 파일을
     그 저장소 기준으로 남긴다. 어느 저장소에도 없으면 세션 폴더 기준(이전과 같다)."""
-    pth = Path(path)
-    if not pth.is_absolute():
+    if not rooted(path):
         return cwd_root
-    return _toplevel(_parent_dir(pth), cache) or cwd_root
+    return _toplevel(_parent_dir(Path(path)), cache) or cwd_root
 
 
 def _in_workspace(path: str, cwd: str | None, srcs, cache: dict) -> bool:
@@ -87,18 +86,16 @@ def _in_workspace(path: str, cwd: str | None, srcs, cache: dict) -> bool:
     저장소 루트가 작업 공간 루트보다 안쪽이면 작업 공간 파일이 아니다(작업 공간 자체가 저장소인 경우는 작업 공간 파일)."""
     if not srcs or not path:
         return False
-    pth = Path(path) if Path(path).is_absolute() else Path(cwd or ".") / path
+    pth = Path(path) if rooted(path) else Path(cwd or ".") / path
     try:
-        pth = pth.resolve()
+        pth = real_path(pth)
     except (OSError, RuntimeError, ValueError):
         return False
     for src in srcs:
-        try:
-            pth.relative_to(src.root)
-        except ValueError:
+        if relative_inside(pth, src.root) is None:
             continue
         top = _toplevel(_parent_dir(pth), cache)
-        return not (top and src.root in Path(top).resolve().parents)
+        return not (top and relative_inside(top, src.root))           # 작업 공간 안에 받아 둔 저장소의 파일은 코드다
     return False
 
 
@@ -106,14 +103,9 @@ def _relative(path: str, root: str | None) -> str | None:
     """저장소 안의 파일만 저장소 기준 상대 경로로. 밖의 경로(개인 폴더 등)는 버린다."""
     if not path:
         return None
-    if not Path(path).is_absolute():
+    if not rooted(path):
         return path.replace("\\", "/")
-    if root:
-        try:
-            return Path(path).resolve().relative_to(Path(root).resolve()).as_posix()
-        except ValueError:
-            return None
-    return None
+    return relative_inside(path, root) if root else None
 
 
 def _prompt_text(content) -> str | None:

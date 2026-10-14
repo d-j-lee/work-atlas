@@ -6,6 +6,7 @@
   python -m atlas llm run <작업> [--key K] [--limit N] [--refresh] [--dry-run] [--work 폴더 --write]
   python -m atlas llm status                               백엔드 · 장부: 이번 달 호출 · 비용 · 통과율 · 거절 이유 · 재표집 일치도
   python -m atlas llm stability <작업> [--sample 3 | --share 0.15]  통과한 답 일부를 캐시 없이 다시 받아 같은지 잰다(재주석 일치)
+  python -m atlas llm bench [--sample 12] [--max-usd 3]    실제 백엔드로 실측 → data/reports/llm-bench-*.md (통과율·이유·일치도·비용·판정 목록)
 
 작업 (method/prompts/<작업>.md 가 시스템 프롬프트 — 본문의 내용 해시가 캐시 키에 들어간다)
   category_card   카테고리 해설: 이 일은 무엇이고 어떻게 흘러가고 어디서 막히고 무엇을 조심하고 어디·누구를 보나.
@@ -42,7 +43,7 @@ from .. import config as configmod
 from ..common import paths
 from .backends import Backend, ClaudeBackend, CommandBackend, NoBackend, Reply, backend_for, parse_reply, run_process  # noqa: F401
 from .base import PLACEHOLDER, SECTIONS, STMT, VERDICTS, canon, digest, llm_dir, prompt_body  # noqa: F401
-from .check import MARKUP, NUMBER_WORDS, check_stmt, numbers_in, strip_literals  # noqa: F401
+from .check import MAGNITUDE_WORDS, MARKUP, NUMBER_WORDS, check_stmt, numbers_in, strip_literals  # noqa: F401
 from .runner import Busy, Runner, agreement, feedback_index, ledger_rows, month_spent, stability, status  # noqa: F401
 from .tasks import (TASKS, Annotate, CategoryCard, CategoryNames, Ctx, Item, Task, WeeklyDigest, WorkDraft,  # noqa: F401
                     card_context, card_facts, card_magnitudes, card_shape, codebook_for_prompt, fill, rendered_cards)
@@ -50,7 +51,7 @@ from .tasks import (TASKS, Annotate, CategoryCard, CategoryNames, Ctx, Item, Tas
 __all__ = [  # 다른 모듈·테스트가 쓰는 이름 — 패키지 안 어디에 있든 atlas.llm.<이름> 으로
     "Backend", "ClaudeBackend", "CommandBackend", "NoBackend", "Reply", "backend_for", "parse_reply", "run_process",
     "PLACEHOLDER", "SECTIONS", "STMT", "VERDICTS", "canon", "digest", "llm_dir", "prompt_body",
-    "MARKUP", "NUMBER_WORDS", "check_stmt", "numbers_in", "strip_literals",
+    "MAGNITUDE_WORDS", "MARKUP", "NUMBER_WORDS", "check_stmt", "numbers_in", "strip_literals",
     "Busy", "Runner", "agreement", "feedback_index", "ledger_rows", "month_spent", "stability", "status",
     "TASKS", "Annotate", "CategoryCard", "CategoryNames", "Ctx", "Item", "Task", "WeeklyDigest", "WorkDraft",
     "card_context", "card_facts", "card_magnitudes", "card_shape", "codebook_for_prompt", "fill", "rendered_cards", "main"]
@@ -78,6 +79,13 @@ def main(argv: list[str] | None = None) -> int:
             s.add_argument("--file", required=True, help="대화 세션에서 받은 답 JSON")
             s.add_argument("--model", default="manual", help="답을 낸 모델 이름(장부용)")
             s.add_argument("--write", action="store_true")
+    bn = sub.add_parser("bench", parents=[common], help="실제 백엔드로 실측 — 통과율·이유·일치도·비용·지연 + 판정 목록")
+    bn.add_argument("--sample", type=int, default=12, help="카테고리 해설 대상 수")
+    bn.add_argument("--stability", type=int, default=3, help="다시 받아 비교할 수")
+    bn.add_argument("--no-digest", action="store_true", help="주간 요약은 부르지 않는다")
+    bn.add_argument("--max-usd", type=float, default=3.0, help="이 실측 전체의 상한")
+    bn.add_argument("--keys", help="쉼표로 고른 카테고리 키 (기본: 큰 것 절반 + 고르게 절반)")
+    bn.add_argument("--model", help="이번 실측에만 쓸 모델 (모델 비교용 — 설정은 바꾸지 않는다)")
     st = sub.add_parser("stability", parents=[common])
     st.add_argument("task", choices=sorted(TASKS))
     st.add_argument("--sample", type=int, default=3)
@@ -96,6 +104,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "status":
         print(json.dumps({"backend": backend_for(cfg).name, **status(p)}, ensure_ascii=False, indent=2))
         return 0
+    if args.cmd == "bench":
+        from . import bench
+        try:
+            if args.model:
+                cfg = {**cfg, "llm": {**cfg["llm"], "model": args.model}}
+            res = bench.run(p, cfg, args.sample, args.stability, not args.no_digest, args.max_usd,
+                            [k.strip() for k in args.keys.split(",")] if args.keys else None)
+        except (RuntimeError, NoBackend, Busy) as e:
+            print(f"[llm] {e}", file=sys.stderr)
+            return 2
+        print(bench.text(res))
+        return 0 if res["calls"] else 1
     task = TASKS[args.task]
     ctx = Ctx(p, cfg)
     if args.cmd == "stability":

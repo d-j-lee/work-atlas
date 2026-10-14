@@ -9,6 +9,11 @@ from pathlib import Path
 from ..common import REPO
 
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+
+
+def reason_kind(problem: str) -> str:
+    """거절·버림 이유의 종류 — 세부(숫자 · 문장)를 뗀 앞부분. 장부 요약이 이유별로 센다."""
+    return re.split(r"\s*[:(\[]", str(problem), maxsplit=1)[0].strip()[:40]
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 SECTIONS = ("flow", "dwell", "variants", "after_end", "open", "related", "code", "people", "cases")
 VERDICTS = ("useful", "wrong", "not_useful")

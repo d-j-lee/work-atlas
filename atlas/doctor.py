@@ -1,11 +1,12 @@
 """점검 — 이 인스턴스가 지금 무엇을 할 수 있고, 무엇이 빠졌고, 다음에 무엇을 하면 되는지 한 번에.
 
-  python -m atlas doctor [--root …] [--json]
+  python -m atlas doctor [--root …] [--json] [--online]
 
 본다: 실행 환경(파이썬·의존성) · 설정(소스 경로·자격 증명 환경 변수가 있는지 — 값은 보지 않는다 · 역할 매핑) ·
 방법(스키마 동기화 · 카테고리 정의) · 데이터(관측 · 마지막 수집 · 세대 · 모델 형식 · 카테고리 · 경고) ·
 소비(커밋 전 검사 · Claude Code 훅 · MCP) · LLM(백엔드 · 실행 파일 · 인증 환경 변수 · 이번 달 지출).
 표시: ok(됨) · ! (권함 — 없어도 돈다) · ✗(막힘 — 고쳐야 그 기능이 돈다). ✗ 가 하나라도 있으면 종료 코드 1.
+--online 이면 네트워크로도 본다(읽기만): Jira 서버에 닿는지 · 사내 CA · 프록시 · 자격 증명, claude CLI 의 버전과 격리 모드.
 아무것도 바꾸지 않는다.
 """
 from __future__ import annotations
@@ -20,14 +21,14 @@ import sys
 from pathlib import Path
 
 from . import __version__, config as configmod
-from .common import paths
+from .common import NO_WINDOW, paths
 
 OK, WARN, FAIL = "ok", "!", "✗"
 
 
 def _git_hooks(root: Path) -> str | None:
     try:
-        return subprocess.run(["git", "config", "core.hooksPath"], cwd=root, capture_output=True, text=True).stdout.strip() or None
+        return subprocess.run(["git", "config", "core.hooksPath"], cwd=root, capture_output=True, text=True, **NO_WINDOW).stdout.strip() or None
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -49,7 +50,7 @@ def _hook_installed(root: Path, cfg: dict) -> list[Path]:
     return found
 
 
-def run(p, cfg: dict) -> list[dict]:
+def run(p, cfg: dict, online: bool = False) -> list[dict]:
     rows: list[dict] = []
 
     def add(area, status, what, action=""):
@@ -80,6 +81,11 @@ def run(p, cfg: dict) -> list[dict]:
             have = bool(os.environ.get(env))
             add("설정", OK if have else FAIL, f"jira:{j.get('name')} 자격 증명 환경 변수 {env} {'있음' if have else '없음'}",
                 "" if have else f"환경 변수 {env} 를 둔다 (값은 atlas.toml 에 적지 않는다)")
+    if online:
+        from .collect import jira as jiramod
+        for j in src.get("jira", []):
+            for ok, what in jiramod.probe(j):
+                add("설정", OK if ok else FAIL, f"jira:{j.get('name')} {what}", "" if ok else "위 안내대로 고친 뒤 atlas doctor --online")
     for c in src.get("claude_code", []):
         d = Path(c.get("projects_dir") or "~/.claude/projects").expanduser()
         add("설정", OK if d.exists() else WARN, f"claude-code:{c.get('name')} {d}", "" if d.exists() else "Claude Code 를 이 컴퓨터에서 쓴 적이 있는지")
@@ -138,6 +144,22 @@ def run(p, cfg: dict) -> list[dict]:
                 f"경로 규칙 후보 {cg.get('path_suggestions')}개 — data/reports/guides/README.md")
         for w in cat.get("warnings", [])[:5]:
             add("데이터", WARN, f"[{w['level']}] {w['what']} ({w['evidence']})", w["action"])
+    last = _json(p.state / "harvest-last.json")
+    last = last if isinstance(last, dict) and isinstance(last.get("finished"), str) else None
+    if last:
+        import datetime as dt
+        from .common import parse_ts
+        try:
+            age = (dt.datetime.now().astimezone() - parse_ts(last["finished"]).astimezone()).days
+        except ValueError:
+            age = 10 ** 4                                           # 읽을 수 없는 시각 — 오래된 것으로 본다
+        stale = age > int(cfg["policy"].get("stale_days", 8))
+        add("데이터", FAIL if not last.get("ok") else WARN if stale else OK,
+            f"마지막 수확 {age}일 전 — {'실패 ' + str(len(last.get('failures', []))) + '건' if not last.get('ok') else '정상'}",
+            ("; ".join(last.get("failures", [])[:2]) + f" → {last.get('report')}") if not last.get("ok") else
+            ("atlas schedule 로 정기 실행을 건다" if stale else ""))
+    elif obs_files:
+        add("데이터", WARN, "주간 수확을 돌린 적이 없다", "atlas harvest — 정기 실행은 atlas schedule")
     # 소비
     hp = _git_hooks(p.root)
     add("소비", OK if hp == ".githooks" else WARN, f"커밋 전 검사 {'켜짐' if hp == '.githooks' else '꺼짐'}",
@@ -156,6 +178,12 @@ def run(p, cfg: dict) -> list[dict]:
         exe = ClaudeBackend(cfg).executable()
         found = bool(shutil.which(exe) or Path(exe).exists())
         add("LLM", OK if found else FAIL, f"claude 실행 파일 {exe}", "" if found else "Claude Code 설치 또는 [llm] claude_path")
+        if online and found:
+            b = ClaudeBackend(cfg)
+            iso = b.isolation()
+            add("LLM", OK if iso != "env-only" else WARN,
+                f"격리 {iso} ({'API 키 · 훅 · CLAUDE.md 모두 끔' if iso == 'bare' else '로그인 사용 · 사용자 설정 끔' if iso == 'safe-mode' else '이 CLI 에 --safe-mode 가 없다 — 사용자 CLAUDE.md·훅이 낄 수 있다'})",
+                "" if iso != "env-only" else "Claude Code 를 올리거나 bare = true(API 키)")
         if lm.get("bare", True):
             key = bool(os.environ.get("ANTHROPIC_API_KEY")) or any(os.environ.get(v) for v in ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"))
             add("LLM", OK if key else WARN, f"--bare 인증 {'환경 변수 있음' if key else 'ANTHROPIC_API_KEY 등 없음'}",
@@ -176,7 +204,7 @@ def run(p, cfg: dict) -> list[dict]:
 def _json(f: Path):
     try:
         return json.loads(f.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError):
         return None
 
 
@@ -184,9 +212,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="atlas doctor", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--online", action="store_true", help="네트워크로도 본다 — Jira 연결·인증, claude 격리 모드 (읽기만)")
     args = ap.parse_args(argv)
     p = paths(args.root)
-    rows = run(p, configmod.load(p.root))
+    rows = run(p, configmod.load(p.root), online=args.online)
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
     else:

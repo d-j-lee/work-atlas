@@ -48,7 +48,29 @@ def main(argv: list[str] | None = None) -> int:
     excerpts = {e["obs_id"]: e["text"] for e in _lines(args.excerpts)} if args.excerpts else None
     report = append_observations(p, events, excerpts, dry_run=args.dry_run)
     print(format_report("ingest", report, args.dry_run))
+    if args.dry_run and events:
+        print(link_preview(p, events))
     return 1 if report["invalid"] else 0
+
+
+def link_preview(p, events: list[dict]) -> str:
+    """이 사건들이 지금 관측의 일과 이어질지 미리 — 이어질 단서(이슈 키 · MR · 경로)가 없으면 고아로 남는다."""
+    from .common import read_observations
+    known_keys, known_mrs, known_paths = set(), set(), set()
+    for o in read_observations(p.observations):
+        k = o.get("keys") or {}
+        known_keys.update(k.get("issue_keys") or [])
+        known_mrs.update(k.get("mr_ids") or [])
+        known_paths.update(k.get("paths") or [])
+    n = len(events)
+    by_key = sum(1 for e in events if set((e.get("keys") or {}).get("issue_keys") or []) & known_keys)
+    by_mr = sum(1 for e in events if set((e.get("keys") or {}).get("mr_ids") or []) & known_mrs)
+    by_path = sum(1 for e in events if set((e.get("keys") or {}).get("paths") or []) & known_paths)
+    none = sum(1 for e in events if not any((e.get("keys") or {}).get(x) for x in ("issue_keys", "mr_ids", "paths", "branches")))
+    pct = lambda x: f"{x}/{n} ({x / n:.0%})"
+    return (f"  연결 미리보기: 아는 이슈 키 {pct(by_key)} · 아는 MR {pct(by_mr)} · 아는 경로 {pct(by_path)} · "
+            f"단서 없음 {pct(none)}" + (" — 단서 없는 사건은 어느 일에도 묶이지 않는다(고아). 본문의 이슈 키·링크를 키로 뽑는지 본다"
+                                       if none > n / 2 else ""))
 
 
 if __name__ == "__main__":
