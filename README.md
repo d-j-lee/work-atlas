@@ -80,7 +80,7 @@ Apache commons-lang·ZooKeeper 의 git + Jira 로, 과거만 보고 배운 뒤 �
 ## 빠른 시작
 
 ```bash
-pip install -e .                       # Python 3.11+. MCP 서버를 쓰려면 pip install "mcp>=1.2". 오프라인 설치는 BOOTSTRAP 준비 2
+pip install -e .                       # Python 3.11+. MCP 서버를 쓰려면 pip install "mcp>=1.2", 훅을 빠르게 하려면 ".[fast]". 오프라인 설치는 BOOTSTRAP 준비 2
 atlas init --repo ~/src/server --jira-url https://jira.company.example   # git 기록에서 atlas.toml 초안 (또는 atlas.example.toml 을 복사)
 atlas doctor --online                  # 무엇이 되고 무엇이 빠졌나 — --online 은 Jira(사내 CA · 프록시 · 토큰) · claude 연결까지
 atlas collect all                      # git · Jira · Claude Code · 작업 폴더 → data/observations (읽기 전용, 증분)

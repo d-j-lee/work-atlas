@@ -19,7 +19,7 @@
 
 1. 이 템플릿을 사내 private 저장소로 복제하고 `.template` 파일을 지운다(템플릿 전용 검사 해제). 회사 데이터는 사내 인스턴스에만 둔다.
    `LICENSE`(MIT 고지)는 지우지 않는다. 회사에 오픈소스 관리 절차가 있으면 반입 목록에 등록한다.
-2. `pip install -e .` (Python 3.11 이상) — `atlas` 명령이 생긴다. MCP 서버를 쓸 거면 `pip install "mcp>=1.2"`.
+2. `pip install -e .` (Python 3.11 이상) — `atlas` 명령이 생긴다. MCP 서버를 쓸 거면 `pip install "mcp>=1.2"`. 훅을 더 빠르게 하려면 `pip install -e ".[fast]"`(orjson — 없어도 결과는 같다).
    사내 PC 가 PyPI 에 못 닿으면, 닿는 PC 에서 휠을 받아 옮긴다(의존성은 PyYAML · jsonschema 와 그 의존성, 빌드용 setuptools):
    `pip download -d wheels --only-binary=:all: --platform win_amd64 --python-version 3.12 "pyyaml>=6.0" "jsonschema>=4.18" "setuptools>=77"`
    → 사내 PC 에서 `pip install --no-index --find-links wheels -e .` (플랫폼 · 파이썬 버전은 사내 PC 에 맞춘다).

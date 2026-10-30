@@ -39,7 +39,8 @@ class Model:
 
     def _json(self, name):
         try:
-            data = json.loads((self.p.model / name).read_text(encoding="utf-8"))
+            from .common import _fast_loads
+            data = _fast_loads((self.p.model / name).read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             return None
         if name in ("paths.json", "text_index.json") and data.get("format") != MODEL_FORMAT:
@@ -140,7 +141,9 @@ def similar(model: Model, text: str, k: int = 5, exclude: set[str] | None = None
     t = model.text
     if not t or not text.strip():
         return []
-    idx = textmod.Index.load(t["idf"], t["vecs"], t["n"])
+    idx = getattr(model, "_text_index", None)          # 한 프로세스에서 색인은 한 번만 짓는다
+    if idx is None:
+        idx = model._text_index = textmod.Index.load(t["idf"], t["vecs"], t["n"])
     out = []
     for wu, score in idx.query(text, k=200 if with_files else k, exclude=exclude):
         meta = t["meta"].get(wu, {})
