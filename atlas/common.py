@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
 
-import jsonschema
 import yaml
 
 # Windows 에서 콘솔 없이(pythonw · 작업 스케줄러) 돌 때 자식 프로세스(git · claude)가 콘솔 창을 띄우지 않게 — 다른 OS 는 빈 값
@@ -189,6 +188,24 @@ class Codebook:
 
 # ---------------------------------------------------------------- 파일 입출력
 
+try:
+    import orjson as _orjson          # 선택 의존성: Rust 로 구현된 JSON 파서
+except ImportError:                   # pragma: no cover
+    _orjson = None
+
+
+def _fast_loads(text):
+    """JSON 을 읽는다. orjson 이 있으면 먼저 쓰고, orjson 이 거부하는 입력은 표준 json 으로 다시 읽는다.
+    그래서 NaN·Infinity·1e400·짝 없는 서로게이트·1024단계 넘는 중첩·잘못된 입력의 오류는 표준 json 과 같다.
+    남는 차이: 64비트를 넘는 정수를 orjson 은 오류 없이 float 로 읽는다(현재 데이터에는 그런 값이 없다)."""
+    if _orjson is not None:
+        try:
+            return _orjson.loads(text)
+        except _orjson.JSONDecodeError:
+            pass
+    return json.loads(text)
+
+
 def read_jsonl(path: Path) -> Iterator[dict]:
     with path.open(encoding="utf-8") as f:
         for n, line in enumerate(f, 1):
@@ -196,7 +213,7 @@ def read_jsonl(path: Path) -> Iterator[dict]:
             if not line:
                 continue
             try:
-                yield json.loads(line)
+                yield _fast_loads(line)
             except json.JSONDecodeError as e:
                 raise ValueError(f"{path}:{n}: JSON 이 아니다 — {e}") from e
 
@@ -273,12 +290,13 @@ def write_jsonl(path: Path, records: Iterable[dict]) -> None:
 
 # ---------------------------------------------------------------- 관측 검증
 
-def observation_validator(p: Paths) -> jsonschema.Draft202012Validator:
+def observation_validator(p: Paths) -> "jsonschema.Draft202012Validator":
+    import jsonschema  # 검증할 때만 불러온다(훅처럼 짧게 도는 명령의 기동 시간을 줄인다)
     schema = json.loads(p.observation_schema.read_text(encoding="utf-8"))
     return jsonschema.Draft202012Validator(schema)
 
 
-def check_observation(obs: dict, validator: jsonschema.Draft202012Validator,
+def check_observation(obs: dict, validator: "jsonschema.Draft202012Validator",
                       codebook: Codebook | None = None) -> list[str]:
     """스키마 위반 + 스키마로 표현하기 어려운 교차 규칙. 빈 목록이면 통과."""
     problems = [f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in validator.iter_errors(obs)]

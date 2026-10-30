@@ -90,9 +90,10 @@ def validate(cfg: dict, root: Path | None = None) -> list[str]:
     if not isinstance(roles, dict):
         return ["identity.roles 는 '역할 id = [패턴…]' 표여야 한다"]
     allowed = None
-    if root is not None and (Path(root) / "method" / "codebook.yaml").exists():
+    if roles and root is not None and (Path(root) / "method" / "codebook.yaml").exists():
         import yaml
-        cb = yaml.safe_load((Path(root) / "method" / "codebook.yaml").read_text(encoding="utf-8")) or {}
+        cb = yaml.load((Path(root) / "method" / "codebook.yaml").read_text(encoding="utf-8"),
+                       Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
         allowed = {v["id"] for f in cb.get("facets", []) if f.get("id") == "roles" for v in f.get("values", [])}
     for role, pats in roles.items():
         if allowed is not None and role not in allowed:
